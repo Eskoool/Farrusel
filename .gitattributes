@@ -1,0 +1,6 @@
+# Finales de línea: LF en el árbol de trabajo, en cualquier máquina.
+# Mismo arreglo que el wiki y que productos/optimizacion-athos: el gitconfig del sistema
+# en Windows trae core.autocrlf=true y .git/config no viaja con el repo.
+* text=auto eol=lf
+*.sh text eol=lf
+*.py text eol=lf

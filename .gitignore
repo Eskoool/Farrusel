@@ -1,0 +1,25 @@
+# Kardex · qué NO entra en el historial
+
+# datos/ son los ORIGINALES descargados del sistema (Informe_MovimientosArtículo.xls,
+# Informe_StockHuecos.xls, stock 27.08.xls). Un original no vive en git: regla dura 1 del
+# segundo cerebro. Se vuelven a descargar cuando hagan falta.
+datos/
+
+# salidas/ mezcla dos cosas: documentación (se versiona) y datos derivados del hospital
+# —inventario, movimientos, huecos, artículos de baja— que son datos reales de pacientes
+# no, pero sí del servicio, y no tienen por qué viajar a un servidor externo (regla dura 5).
+# Se versionan solo los .md, que explican el método y los hallazgos.
+salidas/*.csv
+salidas/*.xlsx
+salidas/*.xls
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Cruft
+.DS_Store
+Thumbs.db
+desktop.ini
