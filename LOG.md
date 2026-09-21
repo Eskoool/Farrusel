@@ -4,6 +4,119 @@ Registro cronológico. Lo más reciente arriba.
 
 ---
 
+## 2026-09-21 · Sesión 8 · sincronía y reconstrucción documental
+
+Sesión desde el segundo cerebro (rama `proyecto/2026-09-21-farrusel-sincronia-y-frello`).
+No se tocó Lovable ni Supabase: solo lectura y documentación.
+
+**Qué se encontró.** `MEMORIA.md` estaba cortada el 2026-08-27 y la Sesión 7 (28-08, en
+Lovable) no constaba en ningún sitio: ni aquí, ni en el wiki, ni en el repo. Se reconstruyó
+desde los seis mensajes de Yared al agente de Lovable (`list_messages` del proyecto
+`59f5ea8d…`) y del esquema real de Supabase (`information_schema`, solo lectura). La
+entrada de abajo es esa reconstrucción, marcada como tal.
+
+**Verificado en Supabase hoy:** 22 vistas en `public` (las 21 de la línea base de la
+Sesión 6 + `v_kardex_articulo_armario`); `v_kardex_articulo_armario` = 1.538 filas
+(1.418 con armario + 120 «Sin Kardex»); `parametrizacion_kardex` = 0 filas;
+`stock_farmatools` = 2.910 filas, un solo corte (2026-08-27); `inventario_huecos_kardex`
+sigue con un solo corte (2026-08-19) → `comparable = false` en todas las filas, como
+prevé la regla 1 de la Sesión 7. **No hay ningún trigger en `public`.**
+
+**Hueco detectado:** la Sesión 7 cita `tools/parser_stock_farmatools.py` como parser Python
+de referencia del informe de Farmatools. **Ese fichero no está en el repo** (ni tracked ni
+sin seguimiento). O nunca existió fuera de Lovable, o se perdió antes del primer commit
+(2026-09-04). Las cifras de control del parser TS (2.912 = 2.910 + 0 + 0 + 2; sumas
+41.474 / 40.411 / 820.056,25 / 1.876.372,66 / 238.576) quedan anotadas en `MEMORIA.md`
+para poder reescribirlo.
+
+**Escrito:** esta entrada, la de la Sesión 7, `MEMORIA.md` al día (estado, modelo de
+datos, pendientes), `CLAUDE.md` y `PRD.md` nuevos (andamiaje de `forja-prd`). En el wiki:
+`proyectos/farrusel/estado.md`, `decisiones.md`, `plan-conexion-frello.md` (nuevo).
+
+---
+
+## 2026-08-28 · Sesión 7 · Gestión Kardex única, motor de propuesta, Farmatools
+
+> **Entrada reconstruida el 2026-09-21** a partir de las seis especificaciones enviadas al
+> agente de Lovable ese día (16:17 → 18:46) y del esquema real de Supabase. No hubo
+> registro en el momento. Lo que aquí se afirma sobre el *resultado* en la app no se ha
+> verificado pantalla a pantalla: se afirma lo que se pidió y lo que Supabase confirma.
+
+**1. Una sola pantalla de consulta (16:17).** «Gestión Kardex» (`/kardex/stock`) absorbe la
+pestaña «Movimientos» (ruta y fichero eliminados; la vista `v_kardex_movimientos_articulo`
+se conserva porque la nueva vista la consume por debajo). Cambia de grano: deja de leer
+`v_kardex_maestro` (un hueco por fila) y lee **`v_kardex_articulo_armario`** (una fila =
+artículo × armario; 1.418 con almacén + 120 con `almacen = null`, los antiguos «movimiento
+sin Kardex»). Tabla reducida a 4 columnas (Artículo · Ubicación · Mín/Máx actual→propuesto ·
+Acción), toda la fila abre un modal casi a pantalla completa con: parametrización editable
+(upsert en `parametrizacion_kardex` sobre `(almacen, codigo)`, `fuente = 'manual'`), huecos
+del artículo (consulta puntual a `v_kardex_maestro` al abrir), consumo del periodo, alertas
+con texto completo. Paginación por `fetchAllRows` (`src/lib/supabase-fetch-all.ts`), que
+falla explícito al tope en vez de callarse. Llenado = `stock_capacidad_valida / capacidad`
+(no se mete en el numerador el stock de los 24 huecos `999999999`).
+
+**2. Motor de propuesta (16:17, corregido 16:25).** Días de cobertura mín/máx en cabecera
+(7 / 21 por defecto), recálculo en cliente. Fórmula final tras cuadrar contra los 1.418
+pares reales:
+
+```
+minimoBase = floor(tasa_diaria × diasMin)
+maximoBase = floor(tasa_diaria × diasMax)
+minimo     = max(1, minimoBase)                        # con consumo, nunca 0 (151 casos, 58 con 0/0)
+maximo     = max(minimo, min(maximoBase, capacidad))   # nunca < mínimo; CHECK de la tabla lo exige
+```
+
+Estados del badge Acción, por prioridad: Sin consumo (ámbar, nunca propone) → Capacidad sin
+configurar (rojo) → **Hueco insuficiente** (rojo, `minimoBase > capacidad`, 6 casos; no se
+recorta en silencio) → Falta mín/máx actual (neutro) → Mantener / Subir / Bajar con
+tolerancia ±10 % sobre el máximo actual. Máximo topado por capacidad se marca (121 casos).
+`propuesta_ambito = 'conjunto'` (1.180 de 1.418): la propuesta es del par K1+K2 y las dos
+filas **no se suman**. Validación en cliente antes del upsert. CSV con `minimo_propuesto`,
+`maximo_propuesto`, `accion`, `maximo_topado_por_capacidad`, días de cobertura, corte y periodo.
+
+**3. Filtrar y ordenar por Acción (16:28).** Fila de chips «Acción» con recuento por estado,
+orden por urgencia (Hueco insuficiente → Capacidad sin configurar → Bajar → Subir → Sin
+consumo → Mantener → Falta mín/máx). Propuesta calculada una vez por fila (`useMemo`).
+
+**4. Cruce con Farmatools (17:35).** `v_kardex_articulo_armario` ampliada con
+`fecha_farmatools, dias_desfase, comparable, nombre_proveedor, upe, precio_neto_envase,
+precio_unitario, valor_stock, exist_farmatools, exist_farmacia, pedido_pendiente,
+discrepancia_ud, discrepancia_eur, consumo_medio_mensual, consumo_valido, cobertura_kardex,
+cobertura_con_farmacia`. Tres reglas duras: (1) `comparable` solo si Farmatools y Kardex son
+del **mismo día** — hoy no (8 días de desfase) y la discrepancia va a null a propósito;
+(2) `consumo_valido = false` si el consumo medio es nulo, 0 o negativo (67 negativos = netos
+de devolución, 15 ceros) → sin cobertura ni alerta de rotura; (3) `cobertura_*` y
+`consumo_medio_mensual` son del artículo entero, no del armario: no se suman entre filas;
+`valor_stock` y `discrepancia_*` sí. Columna **Valor** y métrica «Valor del stock» (92.272 €
+sin filtros: 41.687 K1 + 50.585 K2). Chips «Farmatools y reposición»: Discrepancia (0 hoy),
+Rotura ≤10 % (89), Bajo mínimo <70 % (334), Valorar pedir (162), Consumo no interpretable.
+**El motor pasa a usar `consumo_medio_mensual / 30` como tasa diaria cuando `consumo_valido`**
+(dato medido) en vez de la extrapolación del informe de movimientos, y la fila dice qué fuente
+usa. Redondeo a envase junto al máximo cuando `upe > 1` (692 de 726 artículos con `upe > 1`
+tienen stock que no es múltiplo de envase).
+
+**5. Tercer informe: stock general de Farmatools (18:43, corregido 18:46).** Nuevo parser
+`src/lib/kardex/stock-farmatools.ts` (`tipoReporte = KARDEX_STOCK_FARMATOOLS`, tabla
+`stock_farmatools`, upsert por `(fecha_descarga, codigo)`). Este informe **no lleva la fecha
+dentro**: el contrato `KardexReport` gana `fechaManual` y `/kardex/subida` la pide con un
+`input date` (sugerida desde `file.lastModified`, nunca dada por buena en silencio). Avisa si
+el Kardex no tiene corte de ese mismo día. Mapeo: `exist1→exist_farmacia`,
+`exist58→exist_kardex1`, `exist59→exist_kardex2`, `consumed_9000→consumo_medio_mensual`,
+`ud_pte_rec_1→pedido_pendiente`. Vacío numérico = null, nunca 0.
+
+**Bug grave corregido el mismo día:** el parser usaba `toInt` (convención europea, borra los
+puntos) sobre un fichero con punto **decimal**: `34.93 → 3493`, `15.5 → 155`. Corrupción de
+escala ×100, la misma familia que la del carrusel. Arreglo: `sheetGridRaw` (lectura `raw` de
+XLSX, números como `number`) y `num()` sin parseo de texto. **Cifras de control con el fichero
+real del 27/08:** 2.912 filas = 2.910 datos + 0 cabecera + 0 vacías + 2 descartadas (`PAC`,
+`NOGUIA`); Σ `exist_kardex1` = 41.474 · Σ `exist_kardex2` = 40.411 · Σ `exist_farmacia` =
+820.056,25 · Σ `precio_neto_envase` = 1.876.372,66 · Σ `upe` = 238.576. Van como métricas del
+resumen previo para que un fallo de escala se vea antes de escribir.
+
+**Créditos de Lovable:** no registrados ese día.
+
+---
+
 ## 2026-08-27 · Sesión 6
 
 Migración de Fase 3 + el fichero maestro a Farrusel, en tres fases con parada de

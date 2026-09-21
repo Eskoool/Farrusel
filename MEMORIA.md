@@ -1,7 +1,8 @@
 # MEMORIA — Optimización del Kardex
 
 > Documento de estado. Léelo primero al retomar el proyecto.
-> Última actualización: **2026-08-27**
+> Última actualización: **2026-09-21** (Sesión 8: reconstruye la Sesión 7 del 28-08, que
+> se hizo en Lovable sin dejar rastro aquí — ver `LOG.md`)
 
 ---
 
@@ -28,21 +29,26 @@ Trabajar en local con los ficheros reales, validar la metodología contra datos 
 | Tablas `articulo` + `inventario_huecos_kardex` | ✅ Creadas y pobladas |
 | Vista `v_kardex_stock` | ✅ Creada, con detección de cambios respecto al corte anterior |
 | Pantalla `/kardex/subida` en Farrusel | ✅ Publicada y verificada |
-| Pestaña `/kardex/stock` → **«Gestión Kardex»** | ✅ Publicada, migrada a `v_kardex_maestro` (huecos + consumo + alertas con texto) |
-| Pestaña `/kardex/movimientos` (nueva) | ✅ Publicada — consumo por artículo, sin-consumo, sin-kardex |
-| **Fase 2 · Parametrización (mín/máx)** | ⏸ **Bloqueada: falta el fichero** |
+| Pestaña `/kardex/stock` → **«Gestión Kardex»** | ✅ **Única pantalla de consulta** desde el 28-08: lee `v_kardex_articulo_armario` (artículo × armario), 4 columnas + modal de detalle, chips de alerta / acción / Farmatools, CSV completo |
+| Pestaña `/kardex/movimientos` | ❌ **Retirada el 28-08**, absorbida por «Gestión Kardex» (la vista `v_kardex_movimientos_articulo` sigue viva por debajo) |
+| **Fase 2 · Parametrización (mín/máx)** | ⏸ **Sigue bloqueada por el fichero**, pero ya no en seco: tabla `parametrizacion_kardex` creada (0 filas) y edición manual desde el modal (`fuente = 'manual'`). Falta el parser del informe y el informe mismo |
 | Fase 3 · Movimientos y periodo de cálculo | ✅ Migrado a Farrusel (tabla `movimientos_articulo_kardex` + vistas) — **sigue sin resolver K1 vs K2** (limitación de la fuente, no de la implementación) |
-| Fichero maestro (Fase 1 × Fase 3, un hueco por fila) | ✅ En local y en Farrusel (`v_kardex_maestro`), mismo sistema de colores de alertas en ambos |
+| Fichero maestro (Fase 1 × Fase 3, un hueco por fila) | ✅ En local y en Farrusel (`v_kardex_maestro`); desde el 28-08 solo se consulta hueco a hueco desde el modal |
+| **Cruce con Farmatools** (3.er informe, `stock_farmatools`) | ✅ Cargado el corte 27-08 (2.910 filas). `comparable = false` mientras Kardex y Farmatools no sean del **mismo día** (hoy: 19-08 vs 27-08) |
 | Truncamiento a 1.000 filas del carrusel | ✅ **Arreglado** (`v_regularizacion_detalle`, `v_regularizacion_mes`, `v_abastecimiento`, `v_caducidad_detalle`) |
-| Fase 4 · Motor de propuesta | ⏸ |
+| **Fase 4 · Motor de propuesta** | ✅ **En la UI** (`calcularPropuesta`, 28-08): cobertura 7/21 días, `FLOOR`, nunca 0, tope por capacidad, ±10 %, estados Subir/Bajar/Mantener/Hueco insuficiente. Usa Farmatools como tasa cuando `consumo_valido`. **Sin validar con el farmacéutico** y sin mín/máx actuales contra los que comparar en masa |
 
-### Lo que bloquea todo
+### Lo que sigue bloqueando
 
-Falta el informe de **parametrización por artículo**: código, armario, **stock mínimo**, **stock máximo** y, si vienen, unidades por UDC y tipo de reposición.
-
-El informe de stock por hueco **no lo trae**: su columna `Cap.` es la capacidad física del hueco, no el stock máximo configurado en la máquina. Sin mínimo y máximo actuales no hay contra qué comparar, y por tanto **no existe Subir/Bajar/Mantener**.
-
-Dejar el fichero en `datos/` y continuar por Fase 2.
+1. **El informe de parametrización por artículo** (código, armario, **stock mínimo**, **stock
+   máximo**). El de stock por hueco **no lo trae**: `Cap.` es capacidad física, no máximo
+   configurado. Sin él, `parametrizacion_kardex` solo se llena a mano desde el modal y el
+   badge de Acción dice «Falta mín/máx actual» en las 1.418 filas: el motor propone, pero no
+   hay contra qué comparar en masa. Cuando llegue: parser en `/kardex/subida` (cuarto informe)
+   con `fuente = 'informe'`, y solo entonces Subir/Bajar/Mantener significa algo.
+2. **Dos informes del mismo día.** Farmatools (27-08) y Kardex (19-08) no son comparables y la
+   vista lo dice (`comparable = false`, discrepancia a null). El siguiente corte se descarga
+   **los dos el mismo día**, o el cruce económico no sirve.
 
 ---
 
@@ -57,6 +63,12 @@ Dejar el fichero en `datos/` y continuar por Fase 2.
 | Periodo de cálculo | Se fija en Fase 3, con el histograma real de fechas delante |
 | Tablas | Propias `kardex_*` / `articulo`, nunca las del carrusel |
 | Frontend | Vía agente de Lovable (consume créditos) |
+| Motor (28-08) | `minimo = max(1, floor(tasa×díasMin))`; `maximo = max(minimo, min(floor(tasa×díasMax), capacidad))`. Cobertura 7/21 días por defecto, editable. Si `minimoBase > capacidad` → «Hueco insuficiente», nunca recorte silencioso |
+| Tasa diaria (28-08) | `consumo_medio_mensual / 30` de Farmatools cuando `consumo_valido`; si no, `tasa_diaria_periodo` del informe de movimientos. **La fila dice cuál usa** |
+| Propuesta «conjunto» (28-08) | Artículo en K1 y K2: una sola propuesta para el par, las dos filas la repiten y **no se suman** (el informe de movimientos no reparte por armario) |
+| Comparabilidad Farmatools (28-08) | Solo si los dos informes son del **mismo día**. Con desfase, discrepancia a null y aviso; nunca una discrepancia calculada sobre fechas distintas |
+| Fecha de un informe (28-08) | Si el fichero no la lleva dentro (Farmatools), **se pide**, nunca se deduce. `file.lastModified` es una sugerencia marcada como tal |
+| Vacíos numéricos (28-08) | `null`, nunca `0`: el cero real es una alerta |
 
 ### Por qué tablas propias y no las del carrusel
 
@@ -282,11 +294,51 @@ $py = "C:\Users\ygonperf\AppData\Local\Programs\Python\Python313\python.exe"
 - **`v_kardex_cortes`** / **`v_kardex_periodos_movimientos`** (nuevas, diminutas): para los selectores de la UI.
 - Créditos de Lovable gastados en total: revisar el historial de mensajes del proyecto para la cifra actualizada (la de 13,5 en `Entorno` está desactualizada desde la Sesión 2).
 
+### Ampliación del 2026-08-28 (Sesión 7, verificada contra Supabase el 2026-09-21)
+
+- **`parametrizacion_kardex`** (0 filas): `id, almacen, codigo, stock_minimo, stock_maximo,
+  fuente, nota, actualizado_en`. Clave `(almacen, codigo)`; `CHECK stock_maximo >= stock_minimo`.
+  Hoy solo la escribe el modal (`fuente = 'manual'`). El informe de parametrización, cuando
+  llegue, la carga con `fuente = 'informe'`.
+- **`stock_farmatools`** (2.910 filas, corte 2026-08-27): `fecha_descarga, codigo, descripcion,
+  nombre_proveedor, precio_neto_envase, upe, exist_farmacia, exist_kardex1, exist_kardex2,
+  consumo_medio_mensual, pedido_pendiente, cargado_en`. Upsert por `(fecha_descarga, codigo)`.
+  **Sin FK a `articulo`** a propósito. Todo `numeric`: hay medias unidades y precios con decimales.
+- **`v_kardex_articulo_armario`** (1.538 filas = 1.418 con armario + 120 `almacen = null`): la
+  vista que lee «Gestión Kardex». Una fila = artículo × armario. Agrega Fase 1 (huecos), Fase 3
+  (consumo del periodo), `parametrizacion_kardex` (mín/máx actual, `propuesta_ambito`) y
+  Farmatools (`comparable`, `consumo_valido`, coberturas, valor del stock). Columnas del
+  artículo entero (`cobertura_*`, `consumo_medio_mensual`, propuesta) **no se suman entre
+  filas**; `valor_stock` y `discrepancia_*` sí.
+- **Regresión canónica: 22 vistas en `public`** (las 21 de la Sesión 6 + esta). Verificado
+  2026-09-21. **No existe ningún trigger en `public`**: si algún día uno aparece, alguien lo
+  puso después de esta fecha.
+- **Parser TS `stock-farmatools.ts`** (en Lovable): cifras de control con el fichero real del
+  27/08 → 2.912 filas = 2.910 datos + 2 descartadas (`PAC`, `NOGUIA`); Σ `exist_kardex1`
+  41.474 · Σ `exist_kardex2` 40.411 · Σ `exist_farmacia` 820.056,25 · Σ `precio_neto_envase`
+  1.876.372,66 · Σ `upe` 238.576. **Su espejo Python `tools/parser_stock_farmatools.py` no está
+  en este repo** (ver «Pendiente»).
+
 ---
 
 ## Pendiente al retomar
 
-1. **Conseguir el informe de parametrización** (mín/máx) → desbloquea Fase 2. **Sigue siendo el bloqueo real** del motor de propuesta (Fase 4); ni el informe de movimientos ni el maestro lo sustituyen.
+0. **`PRD.md` v1.0 aprobado el 2026-09-21** (Sesión 8, `forja-prd`). Siguiente construcción:
+   **Fase 0** (SQL de §6: `propuesta_kardex`, `evento_kardex`, `uso_evento`, triggers) en el
+   editor de Supabase, sin agente; después Fase 1 con el prompt de §13. La conexión con
+   Frello (`proyectos/farrusel/plan-conexion-frello.md` en el wiki) no arranca antes de cerrar
+   las fases 0, 1 y 2: hoy no hay ni un trigger ni un evento definido. La identidad federada
+   con Frello está estudiada y **aplazada a v1.2** (PRD §12).
+0b. **Reescribir `tools/parser_stock_farmatools.py`** (citado el 28-08 como parser de
+   referencia, ausente del repo) contra las cifras de control de arriba, para que
+   `test_paridad_lovable.py` cubra también el tercer informe.
+0c. **Validar el motor con el farmacéutico** sobre los estados que más duelen: 6 «Hueco
+   insuficiente», 121 máximos topados, 151 casos donde la fórmula original daba 0.
+1. **Conseguir el informe de parametrización** (mín/máx) → desbloquea Fase 2 de verdad. La
+   tabla y la edición manual ya existen; **falta el fichero y su parser** (cuarto informe en
+   `/kardex/subida`). Ni el informe de movimientos ni el maestro lo sustituyen.
+1b. **Descargar el próximo corte de Kardex y de Farmatools el mismo día**, o `comparable`
+   seguirá a false y el cruce económico (discrepancias) no se activa.
 2. **Conseguir un informe de movimientos con desglose por almacén** (K1 vs K2) → sin él no se puede decidir consolidación real, solo detectar «sin consumo en toda la farmacia» (ya hecho, en local y en Farrusel).
 3. **Corregir los 24 huecos con `capacidad_sin_limite`** (placeholder `999999999`, alerta roja tanto en el Excel local como en «Gestión Kardex»): configurar una capacidad real en la máquina.
 4. Revisar los 22 códigos «sin consumo, nuevos a valorar» con el farmacéutico antes de tocar nada físico — visibles en `/kardex/movimientos` y en el Excel local.
