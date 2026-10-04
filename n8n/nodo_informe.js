@@ -1,10 +1,9 @@
 // Nodo Code de n8n · "Construir informe" (modo: Run Once for All Items)
-// Lee uso_evento y evento_kardex de Supabase (políticas de lectura para la clave pública),
-// construye el resumen y el informe HTML interactivo, y lo deja como adjunto binario.
+// Recibe las filas de uso_evento y evento_kardex (nodos HTTP anteriores), construye el resumen y el informe HTML interactivo, y lo deja como adjunto binario.
 // El marcador /*__TEMPLATE__*/ lo sustituye n8n/build_workflow.py con n8n/informe_template.html.
 const TEMPLATE = /*__TEMPLATE__*/'';
 
-const cfg = $input.first().json;
+const cfg = $('Config').first().json;
 const hoy = new Date();
 
 // Guarda: el disparo programado solo actúa en 2026. La prueba manual se salta la guarda.
@@ -12,30 +11,10 @@ if (cfg.modo !== 'prueba' && hoy.getUTCFullYear() !== 2026) {
   return [];
 }
 
-const traer = async (tabla, columnas) => {
-  const filas = [];
-  const paso = 1000; // PostgREST corta a 1000 filas por petición
-  for (let pagina = 0; pagina < 200; pagina++) {
-    const desde = pagina * paso;
-    const lote = await this.helpers.httpRequest({
-      method: 'GET',
-      url: `${cfg.supabaseUrl}/rest/v1/${tabla}?select=${columnas}&order=id.asc`,
-      headers: {
-        apikey: cfg.anonKey,
-        Authorization: `Bearer ${cfg.anonKey}`,
-        'Range-Unit': 'items',
-        Range: `${desde}-${desde + paso - 1}`,
-      },
-      json: true,
-    });
-    filas.push(...lote);
-    if (lote.length < paso) break;
-  }
-  return filas;
-};
-
-const uso = await traer('uso_evento', 'pantalla,accion,creado_en');
-const eventos = await traer('evento_kardex', 'tipo,creado_en,procesado_en,resultado');
+// Las filas llegan de los nodos HTTP «Leer uso_evento» y «Leer evento_kardex».
+// Con la tabla vacía el nodo emite un elemento sin campos: se descarta.
+const uso = $('Leer uso_evento').all().map(i => i.json).filter(r => r.pantalla);
+const eventos = $('Leer evento_kardex').all().map(i => i.json).filter(r => r.tipo);
 
 const n = (arr, f) => arr.filter(f).length;
 const resumen = {
