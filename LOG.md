@@ -22,7 +22,18 @@ Farmatools (D). **Decidido:** el informe manda sobre una fila `aplicada`.
 ocupación, Farmatools ampliado, ficha por medicamento); lo único escrito está en
 `decisiones.md` del wiki. Reconstruir si se quiere el detalle.
 
-**Siguiente:** ejecutar la Fase 0 (`apply_migration` con OK), con las pruebas de transición.
+**Fase 0 ejecutada (2026-10-04, `apply_migration` `kardex_fase0_propuestas_eventos_uso`, OK de Yared).**
+Resultado: 22 vistas, 3 tablas nuevas, 4 triggers, CHECK de `fuente` con `'aplicada'`,
+`parametrizacion_kardex` intacta (1.418). Pruebas dentro de un bloque con rollback forzado
+(no quedó ninguna fila): `propuesta→aplicada` y `rechazada→aplicada` fallan con
+«Transición ilegal»; `aceptada→aplicada` escribe `fuente='aplicada'`; 3 eventos de propuesta
+emitidos; mínimo 0 rechazado por CHECK; 3 filas de un corte ficticio → **un** `corte_cargado`.
+Tablas verificadas vacías después. Nota: dentro de una transacción `now()` es constante y
+la clave única `(fecha_descarga, almacen, codigo, creada_en)` choca; en la app cada decisión
+va en su propia transacción, no afecta.
+
+**Siguiente:** Fase 1 (decisiones en el modal) y Fase 2 (registro de uso) en Lovable, con aviso
+de créditos antes de cada envío. Antes, `supabase-schema.sql` del repo sigue obsoleto.
 
 ---
 
