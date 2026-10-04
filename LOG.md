@@ -22,6 +22,17 @@ Farmatools (D). **Decidido:** el informe manda sobre una fila `aplicada`.
 ocupación, Farmatools ampliado, ficha por medicamento); lo único escrito está en
 `decisiones.md` del wiki. Reconstruir si se quiere el detalle.
 
+**Migración `kardex_exist_carrusel_y_exist_farmatools_k1_k2` (2026-10-04, OK de Yared).** Para la acción
+«Valorar pedido»: `stock_farmatools.exist_carrusel` (numeric, nullable, hoy sin datos: `exist61` aún no se
+importa) y tres columnas al FINAL de `v_kardex_articulo_armario`: `exist_carrusel`, `exist_farmatools_k1`
+(= exist58) y `exist_farmatools_k2` (= exist59), totales por artículo. Regresión: 5.898 filas, 5.671 en
+Kardex, Σ stock 360.809, Σ exist_farmacia 1.130.032,96, Σ valor 369.675,22 y 967 códigos, idénticos;
+71→74 columnas; 22 vistas; `security_invoker` y permisos intactos; `v_regularizacion_detalle` 11.793.
+Primer intento falló por un `` mal escapado en una cadena `E''` (se deshizo entero).
+Regla de «Valorar pedido» (Yared): (exist58+exist59) < 30 % de consumed_9000 (`consumo_medio_mensual`) →
+si además (exist1+exist61) < 30 % y el pedido pendiente no lo cubre → valorar pedido. Con datos del 22-09 y
+sin exist61: 815 artículos del Kardex con consumo, 351 paso 1, 235 paso 2, 174 finales. SQL en `sql/`.
+
 **Fase 0 ejecutada (2026-10-04, `apply_migration` `kardex_fase0_propuestas_eventos_uso`, OK de Yared).**
 Resultado: 22 vistas, 3 tablas nuevas, 4 triggers, CHECK de `fuente` con `'aplicada'`,
 `parametrizacion_kardex` intacta (1.418). Pruebas dentro de un bloque con rollback forzado
