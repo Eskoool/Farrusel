@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Farrusel · Informe de uso</title>
+<style>
+  :root { --bg:#f6f7f9; --card:#fff; --tx:#1b2430; --mut:#667085; --ac:#0f766e; --ok:#15803d; --ko:#b42318; --bd:#e4e7ec; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#12161c; --card:#1b2129; --tx:#e6e9ee; --mut:#98a2b3; --ac:#2dd4bf; --ok:#4ade80; --ko:#f87171; --bd:#2b3340; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--tx); font:15px/1.5 system-ui,-apple-system,Segoe UI,sans-serif; }
+  main { max-width:960px; margin:0 auto; padding:24px 16px 48px; }
+  h1 { font-size:22px; margin:0 0 4px; } h2 { font-size:16px; margin:0 0 12px; }
+  .mut { color:var(--mut); font-size:13px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); gap:12px; margin:20px 0; }
+  .card { background:var(--card); border:1px solid var(--bd); border-radius:10px; padding:14px 16px; margin-bottom:16px; }
+  .kpi b { display:block; font-size:28px; line-height:1.1; } .kpi span { color:var(--mut); font-size:13px; }
+  .bar-row { display:grid; grid-template-columns:64px 1fr 40px; gap:8px; align-items:center; margin:4px 0; }
+  .bar { height:14px; background:var(--ac); border-radius:3px; min-width:2px; }
+  .ok { color:var(--ok); font-weight:600; } .ko { color:var(--ko); font-weight:600; }
+  table { width:100%; border-collapse:collapse; font-size:14px; }
+  th,td { text-align:left; padding:6px 8px; border-bottom:1px solid var(--bd); }
+  th { cursor:pointer; user-select:none; } th:hover { color:var(--ac); }
+  select,input { background:var(--card); color:var(--tx); border:1px solid var(--bd); border-radius:6px; padding:6px 8px; font:inherit; }
+  .filters { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:10px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Farrusel · Informe de uso</h1>
+  <div class="mut" id="meta"></div>
+
+  <div class="grid" id="kpis"></div>
+
+  <div class="card">
+    <h2>Objetivo de la métrica 1 por mes <span class="mut">(≥ 1 corte cargado y ≥ 4 consultas de Gestión Kardex)</span></h2>
+    <table id="objetivo"><thead><tr><th>Mes</th><th>Cortes</th><th>Consultas</th><th>Cumple</th></tr></thead><tbody></tbody></table>
+    <p class="mut" id="racha"></p>
+  </div>
+
+  <div class="card">
+    <h2>Actividad por mes</h2>
+    <div class="filters">
+      <select id="fSerie">
+        <option value="aperturas">Aperturas de pantalla</option>
+        <option value="decisiones">Decisiones (aceptar / rechazar / aplicar)</option>
+        <option value="cortes">Cortes cargados</option>
+      </select>
+    </div>
+    <div id="barras"></div>
+  </div>
+
+  <div class="card">
+    <h2>Registro de uso <span class="mut" id="nUso"></span></h2>
+    <div class="filters">
+      <select id="fPantalla"><option value="">Todas las pantallas</option></select>
+      <select id="fAccion"><option value="">Todas las acciones</option></select>
+      <select id="fMes"><option value="">Todos los meses</option></select>
+    </div>
+    <table id="tabla"><thead><tr><th data-k="mes">Mes</th><th data-k="pantalla">Pantalla</th><th data-k="accion">Acción</th><th data-k="n">Nº</th></tr></thead><tbody></tbody></table>
+  </div>
+
+  <div class="card">
+    <h2>Eventos (bandeja de salida)</h2>
+    <table id="eventos"><thead><tr><th>Tipo</th><th>Total</th><th>Procesados OK</th><th>Con error</th><th>Pendientes</th></tr></thead><tbody></tbody></table>
+    <p class="mut">Sin consumidor externo (v1.1 con Frello) no hay procesado: el 95 % de la métrica 2 aún no es medible.</p>
+  </div>
+</main>
+
+<script>
+const DATOS = /*__DATA__*/null;
+const uso = DATOS.uso, ev = DATOS.eventos;
+const mesDe = s => String(s).slice(0, 7);
+const cuenta = (arr, f) => arr.reduce((m, x) => { const k = f(x); m[k] = (m[k] || 0) + 1; return m; }, {});
+const meses = [...new Set([...uso.map(u => mesDe(u.creado_en)), ...ev.map(e => mesDe(e.creado_en))])].sort();
+const el = id => document.getElementById(id);
+
+el('meta').textContent = 'Generado el ' + DATOS.generado + ' · ' + uso.length + ' registros de uso · ' + ev.length + ' eventos · solo agregados, sin datos de paciente ni de personas.';
+
+const cortes = ev.filter(e => e.tipo === 'corte_cargado');
+const gestion = uso.filter(u => u.pantalla === 'gestion' && u.accion === 'abrir');
+const decis = ev.filter(e => e.tipo.startsWith('propuesta_'));
+[
+  ['Cortes cargados', cortes.length],
+  ['Consultas de Gestión Kardex', gestion.length],
+  ['Propuestas aceptadas', ev.filter(e => e.tipo === 'propuesta_aceptada').length],
+  ['Propuestas rechazadas', ev.filter(e => e.tipo === 'propuesta_rechazada').length],
+  ['Propuestas aplicadas', ev.filter(e => e.tipo === 'propuesta_aplicada').length],
+].forEach(([t, n]) => { const d = document.createElement('div'); d.className = 'card kpi'; d.innerHTML = '<b>' + n + '</b><span>' + t + '</span>'; el('kpis').appendChild(d); });
+
+// Objetivo por mes + racha de meses seguidos que cumplen
+const cC = cuenta(cortes, e => mesDe(e.creado_en)), cG = cuenta(gestion, u => mesDe(u.creado_en));
+let racha = 0, maxRacha = 0;
+meses.forEach(m => {
+  const c = cC[m] || 0, g = cG[m] || 0, ok = c >= 1 && g >= 4;
+  racha = ok ? racha + 1 : 0; maxRacha = Math.max(maxRacha, racha);
+  const tr = document.createElement('tr');
+  tr.innerHTML = '<td>' + m + '</td><td>' + c + '</td><td>' + g + '</td><td class="' + (ok ? 'ok' : 'ko') + '">' + (ok ? 'Sí' : 'No') + '</td>';
+  el('objetivo').tBodies[0].appendChild(tr);
+});
+el('racha').textContent = 'Racha más larga cumpliendo: ' + maxRacha + ' mes(es) seguidos (objetivo: 3).';
+
+// Barras por mes
+function pintaBarras() {
+  const s = el('fSerie').value;
+  const f = { aperturas: () => cuenta(uso.filter(u => u.accion === 'abrir'), u => mesDe(u.creado_en)),
+              decisiones: () => cuenta(decis, e => mesDe(e.creado_en)),
+              cortes: () => cC }[s]();
+  const max = Math.max(1, ...meses.map(m => f[m] || 0));
+  el('barras').innerHTML = meses.length ? meses.map(m => '<div class="bar-row"><span class="mut">' + m + '</span><div class="bar" style="width:' + (100 * (f[m] || 0) / max) + '%"></div><b>' + (f[m] || 0) + '</b></div>').join('') : '<p class="mut">Sin datos todavía.</p>';
+}
+el('fSerie').onchange = pintaBarras; pintaBarras();
+
+// Tabla filtrable y ordenable
+const opt = (id, vals) => vals.forEach(v => { const o = document.createElement('option'); o.value = o.textContent = v; el(id).appendChild(o); });
+opt('fPantalla', [...new Set(uso.map(u => u.pantalla))].sort());
+opt('fAccion', [...new Set(uso.map(u => u.accion))].sort());
+opt('fMes', meses);
+let orden = { k: 'mes', asc: false };
+function pintaTabla() {
+  const filas = uso.filter(u => (!el('fPantalla').value || u.pantalla === el('fPantalla').value) && (!el('fAccion').value || u.accion === el('fAccion').value) && (!el('fMes').value || mesDe(u.creado_en) === el('fMes').value));
+  const g = cuenta(filas, u => mesDe(u.creado_en) + '|' + u.pantalla + '|' + u.accion);
+  let rows = Object.entries(g).map(([k, n]) => { const [mes, pantalla, accion] = k.split('|'); return { mes, pantalla, accion, n }; });
+  rows.sort((a, b) => (a[orden.k] > b[orden.k] ? 1 : -1) * (orden.asc ? 1 : -1));
+  el('nUso').textContent = '(' + filas.length + ' registros)';
+  el('tabla').tBodies[0].innerHTML = rows.map(r => '<tr><td>' + r.mes + '</td><td>' + r.pantalla + '</td><td>' + r.accion + '</td><td>' + r.n + '</td></tr>').join('') || '<tr><td colspan="4" class="mut">Sin datos.</td></tr>';
+}
+['fPantalla', 'fAccion', 'fMes'].forEach(id => el(id).onchange = pintaTabla);
+document.querySelectorAll('#tabla th').forEach(th => th.onclick = () => { orden = { k: th.dataset.k, asc: orden.k === th.dataset.k ? !orden.asc : true }; pintaTabla(); });
+pintaTabla();
+
+// Eventos
+const tipos = [...new Set(ev.map(e => e.tipo))].sort();
+el('eventos').tBodies[0].innerHTML = tipos.map(t => { const x = ev.filter(e => e.tipo === t);
+  return '<tr><td>' + t + '</td><td>' + x.length + '</td><td>' + x.filter(e => e.resultado === 'ok').length + '</td><td>' + x.filter(e => e.resultado === 'error').length + '</td><td>' + x.filter(e => !e.procesado_en).length + '</td></tr>'; }).join('') || '<tr><td colspan="5" class="mut">Sin eventos.</td></tr>';
+</script>
+</body>
+</html>
