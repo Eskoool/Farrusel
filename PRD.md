@@ -334,7 +334,12 @@ create policy anon_all on public.propuesta_kardex for all to anon, authenticated
 create policy anon_sel on public.evento_kardex    for select to anon, authenticated using (true);
 create policy anon_ins on public.uso_evento       for insert to anon, authenticated with check (true);
 create policy anon_sel on public.uso_evento       for select to anon, authenticated using (true);
--- evento_kardex NO tiene política de insert/update: solo lo escriben los triggers (owner de la tabla).
+-- evento_kardex NO tiene política de insert/update: solo lo escriben los triggers. OJO (v1.1): un trigger
+-- corre con los permisos de quien hace la operación (anon), no del owner, así que emitir_evento_corte() y
+-- emitir_evento_propuesta() DEBEN ser `security definer set search_path = public` (migración
+-- kardex_eventos_security_definer, 2026-10-04); sin eso la carga de un corte falla con
+-- «new row violates row-level security policy for table evento_kardex». Las pruebas se hacen con
+-- `set local role anon`, no como administrador.
 -- Si en la v1.2 entra la identidad federada, estas políticas pasan a select-only y las escrituras
 -- van por Edge Function con service_role: el esquema no cambia, solo las políticas.
 ```

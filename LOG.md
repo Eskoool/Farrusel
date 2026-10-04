@@ -22,6 +22,16 @@ Farmatools (D). **Decidido:** el informe manda sobre una fila `aplicada`.
 ocupación, Farmatools ampliado, ficha por medicamento); lo único escrito está en
 `decisiones.md` del wiki. Reconstruir si se quiere el detalle.
 
+**Fallo de la Fase 0 detectado en producción (2026-10-04).** Al subir Farmatools: «0 filas escritas en
+stock_farmatools … new row violates row-level security policy for table evento_kardex». Causa: los triggers
+`emitir_evento_corte` y `emitir_evento_propuesta` corren con los permisos de `anon` y `evento_kardex` solo
+admite SELECT a `anon`; mis pruebas corrieron como administrador, que se salta la RLS. Arreglo (migración
+`kardex_eventos_security_definer`): ambas funciones `security definer set search_path = public` y EXECUTE
+revocado a anon/authenticated. Reprobado con `set local role anon` y rollback: carga de 3 filas → 1
+`corte_cargado`; propuesta→aceptada→aplicada → `fuente='aplicada'` y 2 eventos; `anon` no puede escribir
+directo en `evento_kardex`. **Lección:** probar siempre los triggers con el rol que usa la app.
+**Pendiente:** volver a subir el informe de Farmatools.
+
 **Migración `kardex_exist_carrusel_y_exist_farmatools_k1_k2` (2026-10-04, OK de Yared).** Para la acción
 «Valorar pedido»: `stock_farmatools.exist_carrusel` (numeric, nullable, hoy sin datos: `exist61` aún no se
 importa) y tres columnas al FINAL de `v_kardex_articulo_armario`: `exist_carrusel`, `exist_farmatools_k1`
