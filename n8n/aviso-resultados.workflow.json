@@ -255,6 +255,25 @@
         1240,
         110
       ]
+    },
+    {
+      "parameters": {
+        "resource": "message",
+        "operation": "addLabels",
+        "messageId": "={{ $json.id }}",
+        "labelIds": [
+          "INBOX",
+          "UNREAD"
+        ]
+      },
+      "id": "gmail-bandeja",
+      "name": "Poner en bandeja de entrada",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1480,
+        110
+      ]
     }
   ],
   "connections": {
@@ -334,6 +353,17 @@
         [
           {
             "node": "Enviar correo",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Enviar correo": {
+      "main": [
+        [
+          {
+            "node": "Poner en bandeja de entrada",
             "type": "main",
             "index": 0
           }

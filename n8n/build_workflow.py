@@ -51,6 +51,12 @@ nodos = [
                     "options": {"attachmentsUi": {"attachmentsBinary": [{"property": "informe"}]}}},
      "id": "gmail-envio", "name": "Enviar correo", "type": "n8n-nodes-base.gmail",
      "typeVersion": 2.1, "position": [1240, 110]},
+    # Gmail no entrega a la bandeja un mensaje que uno se envía a sí mismo (lo deduplica y deja
+    # solo «Enviados»). Se le añaden las etiquetas INBOX y UNREAD para que aparezca como nuevo.
+    {"parameters": {"resource": "message", "operation": "addLabels", "messageId": "={{ $json.id }}",
+                    "labelIds": ["INBOX", "UNREAD"]},
+     "id": "gmail-bandeja", "name": "Poner en bandeja de entrada", "type": "n8n-nodes-base.gmail",
+     "typeVersion": 2.1, "position": [1480, 110]},
 ]
 def a(nodo, idx=0): return {"node": nodo, "type": "main", "index": idx}
 con = {
@@ -61,6 +67,7 @@ con = {
     "Leer evento_kardex": {"main": [[a("Juntar", 1)]]},
     "Juntar": {"main": [[a("Construir informe")]]},
     "Construir informe": {"main": [[a("Enviar correo")]]},
+    "Enviar correo": {"main": [[a("Poner en bandeja de entrada")]]},
 }
 wf = {"name": "Farrusel · aviso de resultados (7 días antes del 31-12-2026)", "nodes": nodos,
       "connections": con, "settings": {"executionOrder": "v1", "timezone": "Atlantic/Canary"}}
