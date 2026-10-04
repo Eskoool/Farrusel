@@ -92,9 +92,8 @@ siguiente corte si funcionó.
 
 **Fuera de alcance** (contractual; si aparece, pasa por `/cambio`):
 
-- **Escribir en Frello.** La bandeja de salida está dentro; el consumidor que escribe en
-  la Supabase de Frello es la v1.1 (`proyectos/farrusel/plan-conexion-frello.md`). Motivo:
-  Frello es producción con 105 usuarios y su escritura necesita su propio diseño y OK.
+- **Que Farrusel escriba en Frello.** Nunca directamente. Desde la v1.1 (2026-10-04) lo hace
+  **n8n**, que lee la bandeja `evento_kardex` (REQ-024). Farrusel no guarda ninguna clave de Frello.
 - **Login, roles, RLS por usuario, trazabilidad de quién escribe.** Decidido por Yared el
   2026-09-21: en la v1, enlace = permiso (§10). La **identidad federada con el Auth de
   Frello** se estudió el mismo día, es viable (§12, v1.2) y queda **pendiente de validar en
@@ -344,6 +343,13 @@ create policy anon_sel on public.uso_evento       for select to anon, authentica
 -- van por Edge Function con service_role: el esquema no cambia, solo las políticas.
 ```
 
+**Ampliación v1.1 (2026-10-04)** — `sql/2026-10-04_exist_carrusel_y_exist_farmatools_k1_k2.sql` y
+`sql/2026-10-04_solicitudes_frello.sql`: `stock_farmatools.exist_carrusel`; tres columnas al final de
+`v_kardex_articulo_armario` (`exist_carrusel`, `exist_farmatools_k1`, `exist_farmatools_k2`); tabla
+`solicitante`; `evento_kardex` con tipos `reclamar_pedido`/`solicitar_pedido`, `solicitante_id` y
+`referencia_externa`; función `solicitar_accion_kardex` (security definer, la única que `anon` puede
+usar para escribir en la bandeja).
+
 **Ciclo de vida y borrado.** `propuesta_kardex` es append-only por diseño (una decisión
 nueva sobre el mismo par es una fila nueva; la vigente es la última `aceptada`/`aplicada`).
 Nada se borra desde la app. `evento_kardex` se conserva 12 meses (NFR-006) y se purga a
@@ -507,6 +513,33 @@ por armario, cada una con `ambito = 'conjunto'`.
 - **REQ-014 `[Could]`** El sistema DEBERÁ mostrar en «Actividad» los usos del mes por
   pantalla, los eventos pendientes/ok/error y el porcentaje de éxito.
   > Dado 20 eventos con 19 `ok`, cuando se abre Actividad, entonces «95 %».
+
+### 7.4b Reposición y conexión con Frello (v1.1) — REQ-021, REQ-022, REQ-023, REQ-024
+
+- **REQ-021 `[Must]` ✅** (construido 2026-10-04) Por medicamento, solo lectura y solo con cruce
+  válido (`comparable`, `consumo_valido`, consumo > 0): SI (exist58 + exist59) < 30 % de
+  `consumo_medio_mensual` (consumed_9000), ENTONCES con F = exist1 + exist61 (farmacia + carrusel):
+  F < 30 % y F + pedido pendiente < 30 % → **«Valorar pedido»**; F ≥ 30 % → **«Reponer desde
+  farmacia»**; F < 30 % pero el pedido lo cubre → ninguna, y se dice. Detalle con los cinco números.
+- **REQ-022 `[Must]`** SI un artículo tiene en `pedido_detalle` un pedido con **7 días o más**
+  (`fecha_ud_pte_rec_1`), ENTONCES aviso «Pedido pendiente ≥ 7 días» (chip y badge) y botón
+  **«Reclamar pedido»**.
+- **REQ-023 `[Must]`** «Reclamar pedido» y «Solicitar a gestión» (este en los «Valorar pedido») abren
+  un modal **«¿Quién lo pide?»** con buscador por letras sobre `solicitante` (nombre completo;
+  Administrador, Farmacéutico y FIR de Frello, HUNSC, activos) y nota opcional, y llaman a
+  `solicitar_accion_kardex(tipo, codigo, solicitante, nota)`. La función valida en el servidor y
+  rechaza duplicados (pendiente, o enviado con éxito hace < 7 días). La app no escribe en la bandeja.
+  > Dado un pedido de 16 días, cuando se reclama, entonces un evento `reclamar_pedido` con nº de
+  > pedido, fecha y días; y un segundo intento dice «Ya se pidió el dd/mm hh:mm».
+  > Decisión de Yared 2026-10-04: nombre completo visible en una app sin login. Es una
+  > declaración, no una autenticación; la identidad real sigue siendo la v1.2.
+- **REQ-024 `[Must]`** n8n (cada 5 min) lee los eventos pendientes y escribe en Frello sin cambiar
+  nada de Frello: `incidents` (`Administrativos HUNSC` para reclamar, `Gestión` para solicitar;
+  `created_by` = solicitante; título «Kardex · …») y, para reclamar, además `pedidos_tracking` en
+  `pedido_a_reclamar` (igual que la previsión DPA pero con `origen` por defecto `'manual'` y el id
+  del evento en `origen_ref`). Si falla la tarjeta, borra la incidencia. Marca el evento:
+  `procesado_en`, `resultado`, `error`, `referencia_externa` (id de la incidencia). Un segundo flujo
+  sincroniza `solicitante` a diario desde `profiles` de Frello.
 
 ### 7.5 Identidad federada — REQ-019, REQ-020 · `[Retirado 2026-09-21]`
 
@@ -777,3 +810,4 @@ Espera mi OK antes de tocar la primera pantalla.
 | 2026-09-21 | Identidad federada de Frello estudiada (REQ-019/020, Fase 0b) y **aplazada a v1.2**; la v1 queda con «enlace = permiso» | Yared la quiere validar en una iteración futura, no en el MVP. Lo verificado (Frello firma HS256) se conserva en §12 | §2, §3, §4, §5, §6, §7.5, §9, §10, §11, §12, §13 | retirados REQ-019/020, sin reciclar números |
 | 2026-09-21 | Python = validación, no producto; v2 = Claude Code + Vercel sobre el mismo Supabase; sin visto bueno de Sistemas | Aclaraciones de Yared en el checkpoint | §0, §4, §11, §12, §10 | aceptado en el checkpoint |
 | 2026-10-04 | **v1.1.** (A) `parametrizacion_kardex.fuente` admite `'aplicada'` (el CHECK original lo impedía y la Fase 0 fallaba); (B) cuarto informe «Ocupación de armario» recibido y cargado el 23-09: REQ-016 ✅ con sincronización, mín/máx 0 = `null`, `manual` manda sobre el informe y **el informe manda sobre `aplicada`**; Fase 6 hecha; (C) «Gestión Kardex» pasa a fila por medicamento con seis vistas y cobertura del peor armario; (D) Farmatools ampliado el 23-09 (pedidos, `consumed`, `consumed_ad00`) | El PRD describía un bloqueo ya resuelto y una pantalla ya rehecha; la Fase 0 no se podía ejecutar tal cual | §0, §3.10, §6, §7.2, REQ-016, §11 (Fases 0 y 6) | incorporado a la v1 (OK de Yared, 2026-10-04) |
+| 2026-10-04 | **v1.1 (2).** Reposición (REQ-021, construido), aviso de pedido ≥ 7 días (REQ-022), modal de solicitante y bandeja (REQ-023) y consumidor n8n → Frello (REQ-024). «Escribir en Frello» deja de estar fuera de alcance, pero solo a través de n8n. Se adelanta a las Fases 1 y 2 (decisión de Yared). Paneles informativos de Frello descartados como destino (0 filas, sin políticas) | Yared quiere reclamar pedidos y pedir a gestión desde el Kardex con sus flujos de n8n, sin tocar Frello | §3, §6, §7.4b | incorporado (OK de Yared, 2026-10-04) |

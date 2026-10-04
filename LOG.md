@@ -22,6 +22,17 @@ Farmatools (D). **Decidido:** el informe manda sobre una fila `aplicada`.
 ocupación, Farmatools ampliado, ficha por medicamento); lo único escrito está en
 `decisiones.md` del wiki. Reconstruir si se quiere el detalle.
 
+**Conexión con Frello, parte de Farrusel (2026-10-04, migración `kardex_solicitudes_frello`).** Decidido
+por Yared: modal con nombre completo y buscador (Administrador, Farmacéutico, FIR); sin `origen` propio ni
+nada de DPA; sin tocar Frello: n8n hace los insert; aviso con pedido ≥ 7 días; reclamar = misma tarjeta
+que la previsión (`pedidos_tracking`, `pedido_a_reclamar`) con el id del evento en `origen_ref`. Hecho:
+tabla `solicitante`, tipos y columnas nuevas en `evento_kardex`, función `solicitar_accion_kardex`.
+Probado como `anon` con rollback (8 casos, todos bien). Leído de Frello solo en lectura: `profiles.role`
+(6 Administrador, 29 Farmacéutico, 9 FIR en HUNSC) y `pedidos_tracking` (`origen` texto libre, defecto
+`'manual'`; trigger `validar_estado_pedido`). **Pendiente:** mensaje a Lovable (aviso, botones, modal) y
+los dos flujos de n8n (sincronizar solicitantes, consumir la bandeja). Hallazgo de Frello, fuera de
+alcance: `notify-incident-creation` con `verify_jwt: false` y webhook de n8n sin secreto.
+
 **Sesiones de Lovable del 2026-10-04 (reconstruidas el mismo día desde `list_edits` y `get_diff`).**
 Créditos: no constan (el agente no los ve; mirar el panel de uso de Lovable y anotarlos aquí).
 - 15:55 «Update plan» y **16:14 «Añadió flujo Kardex conjunto» = Fase 1** (decisiones en el modal,
