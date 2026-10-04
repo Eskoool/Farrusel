@@ -4,6 +4,28 @@ Registro cronológico. Lo más reciente arriba.
 
 ---
 
+## 2026-10-04 · Sesión 9 · `/cambio` PRD v1.0 → v1.1
+
+Sesión desde el segundo cerebro. No se tocó Lovable (0 créditos). Supabase: solo lectura.
+
+**Se encontró.** El clon local de `codigo/` iba por detrás del remoto (`4df4889`, con el PRD);
+`git pull --ff-only` lo resolvió. En la base de Farrusel: 22 vistas, **ninguna de las tres
+tablas nuevas y ningún trigger** (Fase 0 sin ejecutar), `parametrizacion_kardex` = 1.418.
+El DDL de §6 habría fallado: el CHECK `parametrizacion_kardex_fuente_check` solo admite
+`'manual'` e `'informe'` y el trigger escribe `'aplicada'`.
+
+**Cambios al PRD (v1.1, OK de Yared):** CHECK ampliado en §6 (A); REQ-016 y Fase 6 hechas (B);
+§7.2 con la fila por medicamento (C); REQ-015 con `[PENDIENTE VALIDAR]` en las columnas de
+Farmatools (D). **Decidido:** el informe manda sobre una fila `aplicada`.
+
+**Hueco:** este LOG no tiene entradas de las sesiones de Lovable del 22 y 23-09 (informe de
+ocupación, Farmatools ampliado, ficha por medicamento); lo único escrito está en
+`decisiones.md` del wiki. Reconstruir si se quiere el detalle.
+
+**Siguiente:** ejecutar la Fase 0 (`apply_migration` con OK), con las pruebas de transición.
+
+---
+
 ## 2026-09-21 · Sesión 8 · sincronía y reconstrucción documental
 
 Sesión desde el segundo cerebro (rama `proyecto/2026-09-21-farrusel-sincronia-y-frello`).

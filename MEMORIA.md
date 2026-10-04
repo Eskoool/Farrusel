@@ -31,7 +31,7 @@ Trabajar en local con los ficheros reales, validar la metodología contra datos 
 | Pantalla `/kardex/subida` en Farrusel | ✅ Publicada y verificada |
 | Pestaña `/kardex/stock` → **«Gestión Kardex»** | ✅ **Única pantalla de consulta** desde el 28-08: lee `v_kardex_articulo_armario` (artículo × armario), 4 columnas + modal de detalle, chips de alerta / acción / Farmatools, CSV completo |
 | Pestaña `/kardex/movimientos` | ❌ **Retirada el 28-08**, absorbida por «Gestión Kardex» (la vista `v_kardex_movimientos_articulo` sigue viva por debajo) |
-| **Fase 2 · Parametrización (mín/máx)** | ⏸ **Sigue bloqueada por el fichero**, pero ya no en seco: tabla `parametrizacion_kardex` creada (0 filas) y edición manual desde el modal (`fuente = 'manual'`). Falta el parser del informe y el informe mismo |
+| **Fase 2 · Parametrización (mín/máx)** | ✅ **Desbloqueada el 2026-09-23** (actualizado 10-04): informe «Ocupación de armario» cargado, `parametrizacion_kardex` = 1.418 filas (`informe` + `manual`). El texto de «Lo que sigue bloqueando» de abajo es histórico |
 | Fase 3 · Movimientos y periodo de cálculo | ✅ Migrado a Farrusel (tabla `movimientos_articulo_kardex` + vistas) — **sigue sin resolver K1 vs K2** (limitación de la fuente, no de la implementación) |
 | Fichero maestro (Fase 1 × Fase 3, un hueco por fila) | ✅ En local y en Farrusel (`v_kardex_maestro`); desde el 28-08 solo se consulta hueco a hueco desde el modal |
 | **Cruce con Farmatools** (3.er informe, `stock_farmatools`) | ✅ Cargado el corte 27-08 (2.910 filas). `comparable = false` mientras Kardex y Farmatools no sean del **mismo día** (hoy: 19-08 vs 27-08) |
@@ -63,6 +63,9 @@ Trabajar en local con los ficheros reales, validar la metodología contra datos 
 | Periodo de cálculo | Se fija en Fase 3, con el histograma real de fechas delante |
 | Tablas | Propias `kardex_*` / `articulo`, nunca las del carrusel |
 | Frontend | Vía agente de Lovable (consume créditos) |
+| Cuarto informe (23-09, PRD v1.1) | «Ocupación de armario» sincroniza: lo que no viene se borra, solo `fuente='informe'`. Mín/máx 0 = `null`. `manual` manda sobre el informe; **el informe manda sobre `aplicada`** (decidido 2026-10-04). Lee el armario de `KARDEXn(n)`: el informe trae KARDEX2 primero |
+| `parametrizacion_kardex.fuente` (10-04) | El CHECK admite `'manual'`, `'informe'` y `'aplicada'` (migración pendiente en la Fase 0) |
+| Gestión Kardex (23-09, PRD v1.1) | Una fila por medicamento; cobertura = el peor armario; stock y valor se suman; mín/máx y acción no se agregan |
 | Motor (28-08) | `minimo = max(1, floor(tasa×díasMin))`; `maximo = max(minimo, min(floor(tasa×díasMax), capacidad))`. Cobertura 7/21 días por defecto, editable. Si `minimoBase > capacidad` → «Hueco insuficiente», nunca recorte silencioso |
 | Tasa diaria (28-08) | `consumo_medio_mensual / 30` de Farmatools cuando `consumo_valido`; si no, `tasa_diaria_periodo` del informe de movimientos. **La fila dice cuál usa** |
 | Propuesta «conjunto» (28-08) | Artículo en K1 y K2: una sola propuesta para el par, las dos filas la repiten y **no se suman** (el informe de movimientos no reparte por armario) |

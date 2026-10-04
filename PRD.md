@@ -3,9 +3,9 @@
 ## 0. Metadatos
 
 ```
-Versión: 1.0
-Fecha: 2026-09-21
-Estado: aprobado (OK de Yared, 2026-09-21)
+Versión: 1.1
+Fecha: 2026-10-04
+Estado: v1.0 aprobada (OK de Yared, 2026-09-21); v1.1 = /cambio del 2026-10-04 (OK de Yared)
 Motor de build: Lovable (MVP). Las herramientas Python de tools/ son SOLO validación del
 modelo de datos, no producto. v2: migración a Claude Code + Vercel, mismo Supabase (§12)
 Autor: Yared González, con Claude (forja-prd)
@@ -79,10 +79,10 @@ siguiente corte si funcionó.
    escrito con su estado de procesado. Sin consumidor externo todavía.
 9. `[Must]` **Registro de uso** (`uso_evento`): aperturas de pantalla y acciones, agregadas
    sin identificar a nadie.
-10. `[Should]` Cuarto informe: **parametrización mín/máx de la máquina** (`fuente = 'informe'`).
-    Es el fichero que exporta el propio Kardex con el mínimo y el máximo que tiene
-    configurados hoy cada artículo en cada armario. Contrato del fichero `[PENDIENTE: no se
-    ha recibido nunca; ver REQ-016]`.
+10. `[Should]` ✅ Cuarto informe: **parametrización mín/máx de la máquina** (`fuente = 'informe'`).
+    Es el informe «Ocupación de armario» (StocKey → Informes → Armarios), con el mínimo y el
+    máximo configurados hoy en cada artículo y armario. Cargado el 2026-09-23: 1.418 filas.
+    Contrato y reglas de carga en REQ-016.
 11. `[Should]` Corregir el truncamiento a 1.000 filas en las cuatro páginas del carrusel
     (`fetchAllRows`).
 12. `[Should]` Parser Python de referencia del informe de Farmatools
@@ -187,7 +187,8 @@ consumidor de `evento_kardex` (v1.1) y, si entra, la identidad federada de la v1
 `salidas/MODELO_DATOS.md` y `MEMORIA.md` § Modelo de datos): `articulo` (948),
 `inventario_huecos_kardex` (1.742, un hueco por fila y corte), `movimientos_articulo_kardex`
 (925, grano periodo×sección×código), `stock_farmatools` (2.910, un corte),
-`parametrizacion_kardex` (0), y las seis vistas `v_kardex_*`. No se modifican.
+`parametrizacion_kardex` (1.418 desde el 2026-09-23; eran 0 al escribir la v1.0), y las
+seis vistas `v_kardex_*`. Solo cambia el CHECK de `fuente` de `parametrizacion_kardex` (v1.1, abajo).
 
 ```
 articulo 1──n inventario_huecos_kardex        (por corte)
@@ -203,6 +204,13 @@ uso_evento      [NUEVA]                       métrica de uso, sin identidad
 `docs/anexos/schema-v1.sql` cuando se ejecute la fase 1):
 
 ```sql
+-- ============ v1.1 · parametrizacion_kardex admite fuente = 'aplicada' ============
+-- Sin esto, el trigger de abajo falla en la primera propuesta aplicada: el CHECK original
+-- solo permitía 'manual' e 'informe'.
+alter table public.parametrizacion_kardex drop constraint parametrizacion_kardex_fuente_check;
+alter table public.parametrizacion_kardex add constraint parametrizacion_kardex_fuente_check
+  check (fuente in ('manual','informe','aplicada'));
+
 -- ============ propuesta_kardex · REQ-009, REQ-010, REQ-011 ============
 create type kardex_propuesta_estado as enum ('propuesta', 'aceptada', 'rechazada', 'aplicada');
 
@@ -366,14 +374,26 @@ enseña una revisión previa con métricas de control y escribe por corte.
   > Dado el stock de Farmatools, cuando se arrastra, entonces aparece un campo de fecha con
   > el aviso «sugerencia, compruébala» y no se parsea hasta «Continuar».
   > Dado ese campo vacío, cuando se pulsa «Continuar», entonces error claro, sin fecha inventada.
-- **REQ-016 `[Should]`** CUANDO llegue el informe de parametrización de la máquina, el
-  sistema DEBERÁ cargarlo como cuarto informe en `parametrizacion_kardex` con
-  `fuente = 'informe'`, sin sobrescribir filas con `fuente = 'aplicada'` más recientes.
-  `[PENDIENTE: contrato de columnas del fichero — no se ha recibido nunca. Mínimo exigible:
-  código, armario, stock mínimo, stock máximo. Hasta tenerlo, este REQ no se construye.]`
-  > Dado el informe con N artículos, cuando se carga, entonces N filas en
-  > `parametrizacion_kardex` con `fuente = 'informe'` y el badge «Falta mín/máx actual»
-  > desaparece de esas filas.
+- **REQ-016 `[Should]` ✅** El sistema DEBERÁ cargar el informe «Ocupación de armario» como
+  cuarto informe en `parametrizacion_kardex` con `fuente = 'informe'`, **sincronizando**: el
+  fichero es la foto completa de la máquina, así que lo que ya no viene se borra, acotado a
+  `fuente = 'informe'`. El resumen previo DEBERÁ enumerar lo que se va a borrar.
+  Reglas (decididas el 2026-09-23, salvo la 4, decidida el 2026-10-04):
+  1. El armario se lee de la marca `KARDEXn(n)` que abre cada sección; **el informe trae
+     KARDEX2 antes que KARDEX1**, así que nunca se asume el orden.
+  2. Un mín/máx a 0 es «sin configurar» y se guarda `null`, nunca 0.
+  3. Una fila `fuente = 'manual'` **manda sobre el informe**: la recarga la salta y el resumen
+     previo dice cuántas conserva. Lo manual no se borra jamás.
+  4. **Una fila `fuente = 'aplicada'` NO manda sobre el informe**: el informe es la foto real
+     de la máquina y la sustituye por el valor que traiga (`fuente` pasa a `'informe'`).
+     *(Sustituye a la redacción de la v1.0, «sin sobrescribir `aplicada` más recientes».)*
+  > Dado el informe con N filas, cuando se carga, entonces `parametrizacion_kardex` queda con
+  > las N filas del informe más las `manual` conservadas, y «Falta mín/máx actual»
+  > desaparece de las que traen valores.
+  > Dado un artículo que ya no está en el fichero, cuando se recarga, entonces la fila
+  > `informe` se borra y el resumen previo la enumera («0 filas a borrar» si no hay).
+  > Dado un artículo con `fuente = 'aplicada'`, cuando se carga un informe que lo incluye,
+  > entonces pasa a `fuente = 'informe'` con los valores del fichero.
 
 **Casos límite:** mismo corte recargado (reemplaza, no duplica — verificado); dos cortes
 de fechas distintas (conviven); fichero > 10 MB (NFR-002: se rechaza antes de leer);
@@ -382,9 +402,12 @@ Farmatools sin corte Kardex del mismo día (aviso no bloqueante); código con fo
 
 ### 7.2 Gestión Kardex — REQ-004, REQ-005, REQ-006, REQ-007, REQ-008, REQ-015
 
-**Qué hace.** Única pantalla de consulta. Una fila por artículo×armario desde
-`v_kardex_articulo_armario`; tabla de 4 columnas + Valor; chips de alerta, acción y
-Farmatools; modal de detalle; CSV reproducible.
+**Qué hace.** Única pantalla de consulta. **Desde el 2026-09-23 (v1.1) la unidad de la tabla
+es el medicamento** (822 filas), desplegable a sus filas K1/K2 (artículo×armario, desde
+`v_kardex_articulo_armario`); los 17 chips se sustituyeron por **seis vistas excluyentes**;
+modal de detalle; CSV reproducible. Stock y valor se suman entre armarios; mín/máx y acción
+no se agregan; **la cobertura no se promedia: manda el peor armario**. Los REQ-004 a REQ-008
+no cambian: siguen calculándose por artículo×armario.
 
 - **REQ-004 `[Must]` ✅** El sistema DEBERÁ calcular la propuesta como
   `minimo = max(1, floor(tasa × diasMin))`, `maximo = max(minimo, min(floor(tasa × diasMax), capacidad))`,
@@ -419,7 +442,9 @@ Farmatools; modal de detalle; CSV reproducible.
   > aparece en «Rotura» ni en «Bajo mínimo».
 - **REQ-015 `[Should]`** El sistema DEBERÁ exportar un CSV del que se pueda reconstruir
   cada recomendación sin la app: corte, periodo, días de cobertura, fuente de tasa,
-  propuesta, acción, topado, y las 14 columnas de Farmatools.
+  propuesta, acción, topado, y las columnas de Farmatools `[PENDIENTE VALIDAR: eran 14; el
+  23-09 se añadieron pedidos (nº y fecha), consumed, consumed_ad00 y tres ámbitos de consumo.
+  Fijar la lista exacta al ejecutar la Fase 3]`.
   > Dado un CSV exportado, cuando se recalcula `floor(tasa × diasMax)` en Excel, entonces
   > coincide con `maximo_propuesto` salvo donde `maximo_topado_por_capacidad = true`.
 
@@ -604,13 +629,15 @@ a punta), sin asumir duración: Yared decide cuántas hace por sesión. Cada fas
 al agente (aviso de créditos antes) + verificación contra los criterios de §7 + entrada en
 `LOG.md`. **Fase 0** es la única que no pasa por Lovable.
 
-**Fase 0 · Cimientos SQL** — Objetivo: las tres tablas y los triggers existen y se
+**Fase 0 · Cimientos SQL** — *(v1.1: el bloque de §6 lleva ahora el cambio del CHECK de
+`parametrizacion_kardex`; sin él la primera aplicación falla)*. Objetivo: las tres tablas y los triggers existen y se
 comportan. Cierra: REQ-010 (lado servidor), REQ-012 (lado servidor), estructura de REQ-009 y
 REQ-013. Tareas: pegar el bloque de §6 en el editor SQL de Supabase (o `apply_migration` vía
 MCP con OK); insertar una fila de prueba en cada estado y comprobar que `rechazada →
 aplicada` falla; cargar una fila en `inventario_huecos_kardex` de un corte ficticio y ver un
 solo `corte_cargado`, borrarla después. Terminado cuando: 22 vistas siguen, 3 tablas nuevas,
-4 triggers nuevos, y las pruebas de transición pasan. Depende de: nada.
+4 triggers nuevos, y las pruebas de transición pasan, **incluida una `aceptada → aplicada` que
+escribe `fuente = 'aplicada'` en `parametrizacion_kardex` (se prueba y se revierte)**. Depende de: nada.
 
 **Fase 1 · Decisiones en el modal** — Objetivo: aceptar, rechazar y marcar aplicada desde
 Gestión Kardex. Cierra: REQ-009, REQ-010 (lado app), REQ-011. Tareas: sección
@@ -642,14 +669,13 @@ modelo de datos montado en Lovable es correcto. Cierra: REQ-018. Tareas: escribi
 `test_paridad_lovable.py`; commit y push a `Eskoool/Farrusel`. Terminado cuando: los tests
 pasan con el fichero real. Depende de: tener `datos/stock 27.08.xls` en local.
 
-**Fase 6 · Cuarto informe (parametrización)** — Objetivo: mín/máx actuales en masa.
-Cierra: REQ-016. **Bloqueada** hasta recibir el fichero y fijar su contrato (`/cambio` para
-cerrar el `[PENDIENTE]`). Depende de: el informe.
+**Fase 6 · Cuarto informe (parametrización)** — ✅ **Hecha el 2026-09-23** (v1.1). Cierra:
+REQ-016. Informe «Ocupación de armario», 1.418 filas, con sincronización. Queda como tarea
+suelta la comprobación de la **resubida** («0 filas a borrar», total 1.418).
 
 **Fase 7 · Actividad** `[Could]` — Cierra: REQ-014. Depende de: Fases 1 y 2.
 
-**Orden recomendado:** 0 → 1 y 2 en paralelo → 3 → 4 y 5 cuando convenga → 7. La 6 cuando
-llegue el fichero. **La v1.1 (Frello) no arranca antes de cerrar 0, 1 y 2**: sin eventos
+**Orden recomendado:** 0 → 1 y 2 en paralelo → 3 → 4 y 5 cuando convenga → 7. (La 6 ya está hecha.) **La v1.1 (Frello) no arranca antes de cerrar 0, 1 y 2**: sin eventos
 reales no hay nada que empujar.
 
 **Trazabilidad:** REQ-001…008 ✅ ya cumplidos (sin fase); 009→F1; 010→F0+F1; 011→F1;
@@ -745,3 +771,4 @@ Espera mi OK antes de tocar la primera pantalla.
 | 2026-09-21 | PRD v1.0 escrito sobre producto a medias; REQ-001…008 marcados como ya cumplidos | Siete sesiones sin documento; la conexión con Frello exige eventos definidos | todas | borrador |
 | 2026-09-21 | Identidad federada de Frello estudiada (REQ-019/020, Fase 0b) y **aplazada a v1.2**; la v1 queda con «enlace = permiso» | Yared la quiere validar en una iteración futura, no en el MVP. Lo verificado (Frello firma HS256) se conserva en §12 | §2, §3, §4, §5, §6, §7.5, §9, §10, §11, §12, §13 | retirados REQ-019/020, sin reciclar números |
 | 2026-09-21 | Python = validación, no producto; v2 = Claude Code + Vercel sobre el mismo Supabase; sin visto bueno de Sistemas | Aclaraciones de Yared en el checkpoint | §0, §4, §11, §12, §10 | aceptado en el checkpoint |
+| 2026-10-04 | **v1.1.** (A) `parametrizacion_kardex.fuente` admite `'aplicada'` (el CHECK original lo impedía y la Fase 0 fallaba); (B) cuarto informe «Ocupación de armario» recibido y cargado el 23-09: REQ-016 ✅ con sincronización, mín/máx 0 = `null`, `manual` manda sobre el informe y **el informe manda sobre `aplicada`**; Fase 6 hecha; (C) «Gestión Kardex» pasa a fila por medicamento con seis vistas y cobertura del peor armario; (D) Farmatools ampliado el 23-09 (pedidos, `consumed`, `consumed_ad00`) | El PRD describía un bloqueo ya resuelto y una pantalla ya rehecha; la Fase 0 no se podía ejecutar tal cual | §0, §3.10, §6, §7.2, REQ-016, §11 (Fases 0 y 6) | incorporado a la v1 (OK de Yared, 2026-10-04) |
