@@ -22,6 +22,23 @@ Farmatools (D). **Decidido:** el informe manda sobre una fila `aplicada`.
 ocupación, Farmatools ampliado, ficha por medicamento); lo único escrito está en
 `decisiones.md` del wiki. Reconstruir si se quiere el detalle.
 
+**Sesiones de Lovable del 2026-10-04 (reconstruidas el mismo día desde `list_edits` y `get_diff`).**
+Créditos: no constan (el agente no los ve; mirar el panel de uso de Lovable y anotarlos aquí).
+- 15:55 «Update plan» y **16:14 «Añadió flujo Kardex conjunto» = Fase 1** (decisiones en el modal,
+  reparto K1/K2 por capacidad con «Mismo mín/máx» como segunda opción). **Sin validar:** a las 17:40
+  `propuesta_kardex` tiene 0 filas, nadie ha aceptado nada todavía.
+- 17:28 «Update plan» y **17:33 «Added reposicion badges & views» = Valorar pedido / Reponer desde farmacia**.
+  Ficheros: `src/lib/kardex/stock-farmatools.ts` (`exist61 → exist_carrusel`, Σ en el resumen previo),
+  `src/routes/_app.kardex.stock.tsx` (`reposicionDe`, `ReposicionPanel`, chips en «Riesgo de rotura» y
+  «Todos», badge en la fila del medicamento, columna `accion_reposicion` en el CSV) y, fuera de alcance
+  pero menor, `src/routes/__root.tsx` (tipo `ErrorComponentProps`). La lógica revisada en el diff casa con
+  la regla pedida. El agente renombró el chip antiguo «Valorar pedir» a «Cobertura con farmacia < 70 %»;
+  en el plan Yared anotó «No solo inferior 30%» y «Valorar si hay hueco pero stock a 0»: **por aclarar**.
+- Farmatools cargado de nuevo el 2026-10-04 tras el arreglo de RLS: 2.900 filas, `exist_carrusel` en 2.724
+  (819 > 0, Σ 277.848). **Pero el último corte de Kardex es del 22-09: hoy hay 0 filas comparables**, así que
+  ni discrepancias ni «Valorar pedido» se calculan hasta subir un Kardex del 04-10 (o descargar los dos el
+  mismo día).
+
 **Fallo de la Fase 0 detectado en producción (2026-10-04).** Al subir Farmatools: «0 filas escritas en
 stock_farmatools … new row violates row-level security policy for table evento_kardex». Causa: los triggers
 `emitir_evento_corte` y `emitir_evento_propuesta` corren con los permisos de `anon` y `evento_kardex` solo
