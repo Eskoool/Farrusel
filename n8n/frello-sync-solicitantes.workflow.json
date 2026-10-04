@@ -1,0 +1,272 @@
+{
+  "name": "Farrusel · sincronizar solicitantes desde Frello (diario)",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "cronExpression",
+              "expression": "0 6 * * *"
+            }
+          ]
+        }
+      },
+      "id": "trg-diario",
+      "name": "Cada día 06:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        0
+      ]
+    },
+    {
+      "parameters": {},
+      "id": "trg-man",
+      "name": "Prueba manual",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "cfg-frelloUrl",
+              "name": "frelloUrl",
+              "value": "https://julrvkllcifpcdyvbikr.supabase.co",
+              "type": "string"
+            },
+            {
+              "id": "cfg-farruselUrl",
+              "name": "farruselUrl",
+              "value": "https://sgpbdzphweyeaegzesvb.supabase.co",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "cfg",
+      "name": "Config",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        220,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $('Config').first().json.frelloUrl }}/rest/v1/profiles",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {},
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "select",
+              "value": "id,name,surname,role"
+            },
+            {
+              "name": "centro",
+              "value": "eq.HUNSC"
+            },
+            {
+              "name": "role",
+              "value": "in.(Administrador,Farmacéutico,FIR)"
+            },
+            {
+              "name": "is_active",
+              "value": "not.is.false"
+            }
+          ]
+        }
+      },
+      "id": "frello--leer-personas",
+      "name": "Frello · Leer personas",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        440,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "language": "javaScript",
+        "jsCode": "// Personas que pueden pedir desde Farrusel: Administrador, Farmacéutico y FIR de HUNSC, activos.\nconst ahora = new Date().toISOString();\nconst filas = $input.all()\n  .map(i => i.json)\n  .filter(p => p.id && (p.name || p.surname))\n  .map(p => ({\n    id: p.id,\n    nombre: [p.name, p.surname].filter(Boolean).join(' ').replace(/\\s+/g, ' ').trim(),\n    rol: p.role,\n    activo: true,\n    actualizado_en: ahora,\n  }));\n// Guarda: si Frello devuelve 0 personas (credencial mal, caída…), no se desactiva a nadie.\nif (filas.length === 0) {\n  throw new Error('Frello devolvió 0 personas: no se toca la lista de Farrusel.');\n}\nreturn [{ json: { filas, ids: filas.map(f => f.id), total: filas.length } }];\n"
+      },
+      "id": "preparar-lista",
+      "name": "Preparar lista",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        660,
+        100
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Config').first().json.farruselUrl }}/rest/v1/solicitante",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {},
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "on_conflict",
+              "value": "id"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "resolution=merge-duplicates,return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.filas) }}"
+      },
+      "id": "farrusel--guardar-lista",
+      "name": "Farrusel · Guardar lista",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        880,
+        100
+      ],
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{ $('Config').first().json.farruselUrl }}/rest/v1/solicitante",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "supabaseApi",
+        "options": {},
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            {
+              "name": "id",
+              "value": "=not.in.({{ $('Preparar lista').first().json.ids.join(',') }})"
+            },
+            {
+              "name": "activo",
+              "value": "eq.true"
+            }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Prefer",
+              "value": "return=minimal"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ activo: false, actualizado_en: $now.toISO() }) }}"
+      },
+      "id": "farrusel--desactivar-ausentes",
+      "name": "Farrusel · Desactivar ausentes",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        100
+      ],
+      "alwaysOutputData": true
+    }
+  ],
+  "connections": {
+    "Cada día 06:00": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prueba manual": {
+      "main": [
+        [
+          {
+            "node": "Config",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Config": {
+      "main": [
+        [
+          {
+            "node": "Frello · Leer personas",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Frello · Leer personas": {
+      "main": [
+        [
+          {
+            "node": "Preparar lista",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar lista": {
+      "main": [
+        [
+          {
+            "node": "Farrusel · Guardar lista",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Farrusel · Guardar lista": {
+      "main": [
+        [
+          {
+            "node": "Farrusel · Desactivar ausentes",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Atlantic/Canary"
+  }
+}
