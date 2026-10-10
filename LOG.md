@@ -4,6 +4,147 @@ Registro cronológico. Lo más reciente arriba.
 
 ---
 
+## 2026-10-09 · Sesión 10 · `/cambio` PRD v1.1 → v1.2 (rediseño de Gestión Kardex)
+
+Sesión desde el segundo cerebro. Clon local iba 11 commits por detrás; `git pull --ff-only`.
+Leído el código de `/kardex/stock` en Lovable (`read_file`, 0 créditos): la cabecera tiene seis
+vistas, hasta 17 chips de afinado, frase y 8 métricas; la ventana, 11 bloques y ~80 datos.
+
+**Mockups enseñados a Yared y decididos:** ventana (no panel); cuatro bandejas con rotura primero;
+cobertura por artículo; «Un solo hueco» por armario con capacidad = máximo; aceptar = aplicada.
+
+**Cambios al PRD (v1.2, OK de Yared):** REQ-025…028 nuevos, REQ-011 sin edición manual, §6 con
+`modo_hueco` y `capacidad_recomendada`, §8 reescrito, regla 4 de `CLAUDE.md` con la excepción.
+
+**Lovable:** encargo enviado en modo plan → `.lovable/plan.md` (commit `741fdd8`), **1 crédito**.
+El agente estima 15–30 créditos para construirlo, dice no poder aplicar DDL (solo lectura) y
+plantea dos preguntas: proteger las filas `aplicada` de la recarga del informe de ocupación, y
+mostrar «Aplicada» en la fila en vez de la acción hasta el siguiente corte. Pendiente de OK.
+
+**Construido (Yared aprobó el plan en el editor de Lovable):** commit `33add61` «Rediseñó Kardex y
+ventana de detalle». Créditos: ver panel de uso (no los devuelve la API). Auditoría del código:
+cumple casi todo el encargo, con cuatro problemas: «Con decisión» filtra igual que «Aplicada»;
+rotura y bajo mínimo siguen con umbrales fijos (0,1 / 0,7 meses) sobre solo el Kardex;
+«Solicitar a gestión» solo aparece en «Valorar pedido», que exige Farmatools del mismo día; y si
+la primera lectura de decisiones falla, Aceptar descarta `modo_hueco`/`capacidad_recomendada`
+sin avisar. No se partió el fichero (3.825 líneas). Lovable dejó `supabase-propuesta-modo-hueco.sql`
+para pegar a mano; ojo: declara `nid bigint` y `propuesta_kardex.id` es `uuid` según el PRD.
+
+**Nuevo alcance pedido por Yared: pantalla única «Medicamentos» (Kardex + carrusel).** Plan
+aprobado en cinco fases (sanear 33add61 → vistas nuevas de solo lectura sobre el carrusel →
+motor de rotura de hospital → mín/máx multialmacén con cuatro escenarios → pantalla). Rotura =
+no cubrir 7 días de `consumed_9000/30` con farmacia + K1 + K2 + carrusel horizontal; los de
+frío, farmacia + carrusel vertical (exist60, que hoy se pierde). Antes de construir:
+`sql/2026-10-09_verificacion_unificacion.sql` (solo lectura).
+
+**Verificación ejecutada** (MCP de Supabase, proyecto «Farrusel» = `sgpbdzphweyeaegzesvb`, solo
+`select`):
+- `propuesta_kardex.id` es **uuid** y **no tiene** `modo_hueco` ni `capacidad_recomendada`: la
+  migración no está aplicada y el script de Lovable (`nid bigint`) fallaría. Hoy la app guarda las
+  decisiones sin el modo de hueco (cae en la rama `conModoHueco = false`).
+- Cargas del carrusel **paradas**: Configuración de medicamento y Ubicaciones el 26-06, Farmatools
+  del carrusel (`farmatools_almacen`) el 04-07. Lo del Kardex, al día (04-10).
+- Frío confirmado: en `farmatools_almacen`, 160 códigos con stock en el vertical, **0** con stock
+  también en el horizontal o en el Kardex. De los 330 de configuración ACVR, solo 1 con exist61>0.
+- `stock_farmatools` no tiene exist60 (vertical); sí `exist_carrusel` = exist61.
+- `cobertura_con_farmacia` = (stock K1+K2 + exist_farmacia) / consumo mensual: **no suma carrusel**.
+- Códigos: 902 de 919 códigos de `ubicacion` cruzan con Farmatools del 04-10 (98 %).
+- **En el carrusel la capacidad del hueco = el máximo** (medianas idénticas por tipo de hueco):
+  la capacidad sale del máximo de Athos, no es un límite independiente. El límite físico real lo
+  da el tipo de cubeta (`catalogo_cubeta`), que usa el asistente de cubetas.
+- 22 vistas en `public`.
+
+**Fuente del carrusel: Inventario por almacén (Athos).** Yared pasa
+`InventarioPorAlmacen.xlsx` (09-10): título en la fila 2, cabecera en la fila 8, 1.220 filas (ACH
+1.013, ACVR 201, EXT 6). Columnas: almacén, código, denominación, cantidad, mín., máx., tipo de UDC,
+unidades por UDC y posiciones. **No lleva fecha dentro** (se pide). Tres duplicados exactos; V02129
+aparece con dos tipos de UDC (VM y VMA); V11567 sin máximo. Decidido: el stock del carrusel para la
+rotura sale de aquí; **hueco del carrusel = tipo de UDC** (capacidad = unidades por UDC). Se procesa
+en una tabla propia con histórico (`inventario_almacen`), sin tocar `inventario` del carrusel.
+
+**Base de datos aplicada por Claude (MCP de Supabase, 0 créditos), con OK de Yared.**
+`sql/2026-10-09_v13_modo_hueco_e_inventario_almacen.sql`: `propuesta_kardex` + `modo_hueco`
+('actuales','uno'), `reparto` ('mismo','repartir', null) y `capacidad_recomendada`; tabla
+`inventario_almacen` con RLS anon. Probado en seco como `anon` antes de aplicar (uno → aplicada,
+unique, CHECK); después: 22 vistas, 2 decisiones intactas, `v_acciones` 685 (usa `now()`, no es
+línea base). Primero puse el reparto dentro de `modo_hueco`; corregido en una segunda migración
+porque huecos y reparto son decisiones independientes.
+
+**Lovable, encargo de la Fase 0 + Inventario por almacén:** plan en modo plan (1 crédito), rechazado
+con la corrección del reparto y replanificado (0 créditos, `cb00a12`). Estimación del agente:
+5–12 créditos. Pendiente del OK de Yared para construir.
+
+**Decidido: subida única** (REQ-035). Todo informe entra por la subida del Kardex; los de Athos del
+carrusel se migrarán uno a uno escribiendo en sus mismas tablas; `/carrusel/operador` dejará de
+subir. Plan de Lovable reajustado (0 créditos, `88697a0`): `INVENTARIO_ALMACEN` sin prefijo, lector
+en `src/lib/informes/`, ayuda con el enlace de ATHOS Storage Report y aviso en el operador.
+
+**Construido** (`4618475`, **6,2 créditos**): arreglos de Gestión Kardex, lector `INVENTARIO_ALMACEN`
+y aviso en el operador. Yared subió `InventarioPorAlmacen.xlsx` con fecha 09-10: 1.220 leídas,
+1.217 guardadas, 3 apartadas (ACH 1.012, ACVR 200, EXT 5); V02129 ×2, V11567 sin máximo (null).
+Antes, a las 12:33, el mismo fichero entró por `/carrusel/operador` y se leyó como Farmatools
+(1.225 campos faltantes): la red de seguridad no borró nada, `farmatools_almacen` intacta.
+
+**Vistas de «Medicamentos» creadas por Claude** (`sql/2026-10-09_v13_vistas_medicamento.sql`,
+probadas en seco y como `anon`, 0 créditos): `v_medicamento_almacen` y `v_medicamento`. 24 vistas.
+1.315 medicamentos en almacenes automatizados (718 en Kardex + carrusel H, 105 solo Kardex, 294
+solo carrusel H, 199 de frío). Rotura a 7 días: 106 (80 sin pedido), **no válida aún**: Farmatools
+04-10 frente a Inventario 09-10 (`mismo_dia = false`).
+
+**Encargo 1 de «Medicamentos»** (consulta y acciones): plan de Lovable (1 crédito, `4647574`),
+aprobado por Yared en el editor; construyendo. Extrae piezas comunes de Gestión Kardex
+(`src/lib/kardex/pedidos.ts`, `src/components/kardex/`) sin cambio visible. «Errores de
+configuración» parcial hasta el encargo 2. ⚠ `solicitante` tiene 0 filas: «Reclamar pedido» y
+«Solicitar a gestión» no tendrán a quién asignar hasta importar los flujos de n8n de Frello.
+
+**Construido** (`6bdd48d`, **10,6 créditos**): `/medicamentos` con bandejas, lista con cajitas por
+almacén, ventana y acciones. Yared subió el 09-10 Farmatools (2.899), stock por hueco (1.733) y
+ocupación (1.421): `mismo_dia = true`. Rotura a 7 días: 102 de 1.317 automatizados (76 sin pedido,
+23 de frío). **Problema detectado:** la muestra está dominada por antirretrovirales y otros de
+pacientes externos (Biktarvy, Dovato, emtricitabina/tenofovir, micofenolato, Kreon): el consumo
+`consumed_9000` incluye la dispensación a externos y el stock del robot de la UFA (`exist_robot_ufa`,
+p. ej. 6.420 de Biktarvy en julio) no entra en `stock_hospital`. Pendiente de decisión de Yared.
+
+**2026-10-10 · Decidido (Yared): robot de la UFA y Sur.** Si un medicamento solo tiene existencias en
+el robot de la UFA, va aparte (`solo_ufa`) y su stock del robot se compara con el consumo medio; si
+está además en otros sitios, el robot se suma al stock del hospital. El Hospital del Sur no cuenta.
+Aplicado por Claude (`sql/2026-10-10_v13_robot_ufa.sql`, 0 créditos): `stock_farmatools` +
+`exist_robot_ufa` (exist2) y `exist_carrusel_vert` (exist60); `v_medicamento` recreada con
+`solo_ufa`. Hasta que el lector guarde exist2 y se recargue el Farmatools, quedan a null.
+Lovable (`00eec57`, **3 créditos**): el lector guarda exist2 → `exist_robot_ufa` y exist60 →
+`exist_carrusel_vert`; `/medicamentos` con enlace aparte «Solo robot UFA · N», cajita UFA y fila
+en la ventana. Pendiente: Yared recarga el Farmatools del 09-10.
+Recargado (10-10): 310 medicamentos con stock en el robot; los antirretrovirales salen de la rotura
+(102 → 75). Yared: lo del vertical es de frío, y el robot de la UFA guarda ambiente y frío → el robot
+se suma también en frío (migración `v13_robot_ufa_tambien_en_frio`, 0 créditos). Resultado: rotura
+67 (51 sin pedido, 16 en camino), solo UFA 3. Quedan 5 marcados «BAJA» en la descripción.
+Yared: los de baja nunca son rotura (se quiere que se gasten). Migración `v13_baja_fuera_de_rotura`:
+`en_baja` (descripción que empieza por «BAJA», 44 automatizados) y, provisionalmente, su cobertura a
+null para que la app no los cuente. Rotura final: **62 (46 sin pedido, 16 en camino)**, solo UFA 3.
+Pendiente para el encargo 2: que la pantalla lea `en_baja` (etiqueta «Baja») y devolver la cobertura.
+
+**Decisiones del carrusel** (`sql/2026-10-10_v13_decisiones_carrusel.sql`, migración
+`v13_decisiones_carrusel`, 0 créditos, probada en seco como `anon`): `propuesta_kardex.almacen` admite
+ACH/ACVR y `tasa_fuente` admite `consumo_carrusel`; al pasar a `aplicada` solo K1/K2 escriben en
+`parametrizacion_kardex`; trigger que añade al maestro `articulo` los medicamentos del carrusel
+(ubicaciones CH/CV) al subir el Inventario, más el relleno de lo cargado: 973 → 1.422 artículos
+(CH 1.012, CV 199). Ninguna de las 24 vistas cambió de filas.
+
+**Siguiente, pedido por Yared:** el mín/máx del carrusel parte de su configuración actual y de un
+informe de consumo de movimientos del carrusel (cantidad consumida); el usuario elige 7, 28 o 365 días.
+Falta el fichero del informe para construir su lector.
+
+**Modelo de mín/máx fijado por Yared (10-10):** nivel 1 = `consumo_medio_mensual` (ya son 30 días, no
+se divide: `floor(cmm × días / 30)`, redondeo solo al final) repartido entre las máquinas elegidas
+(«Kardex y carrusel» · «Solo Kardex» · «Solo carrusel»); elegir unas máquinas **no toca las demás**
+aunque tengan stock (nada de retirar). Nivel 2 = afinado por armario con su informe específico
+(Kardex: movimientos; carrusel: informe de consumo, pendiente). Alta en una máquina nueva: no se
+puede predecir la cubeta (sin consumo de esa máquina ni envase medido; `envase` vacía): la elige el
+usuario. Migración `v13_accion_alta` (`accion` admite `alta`, 0 créditos). Plan del encargo 2 de
+Lovable (1 crédito, `306ff3c`): estimación 12–20 créditos; pendiente de OK.
+
+---
+
 ## 2026-10-04 · Sesión 9 · `/cambio` PRD v1.0 → v1.1
 
 Sesión desde el segundo cerebro. No se tocó Lovable (0 créditos). Supabase: solo lectura.

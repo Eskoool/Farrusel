@@ -72,6 +72,10 @@ Trabajar en local con los ficheros reales, validar la metodología contra datos 
 | Comparabilidad Farmatools (28-08) | Solo si los dos informes son del **mismo día**. Con desfase, discrepancia a null y aviso; nunca una discrepancia calculada sobre fechas distintas |
 | Fecha de un informe (28-08) | Si el fichero no la lleva dentro (Farmatools), **se pide**, nunca se deduce. `file.lastModified` es una sugerencia marcada como tal |
 | Vacíos numéricos (28-08) | `null`, nunca `0`: el cero real es una alerta |
+| Cobertura por artículo (10-09, PRD v1.2) | Los días se ajustan en la ventana de cada artículo y la propuesta se recalcula; 7/21 global queda como valor inicial y es lo que usan tabla y bandejas (REQ-025) |
+| Un solo hueco (10-09, PRD v1.2) | Por armario. Sin tope de capacidad: **capacidad a configurar = máximo**, porque la capacidad es lo que cabe en el hueco. Independiente del reparto K1/K2 (mismo o repartir) (REQ-026) |
+| Aceptar = aplicada (10-09, PRD v1.2) | Aceptar hace `aceptada → aplicada` seguido; se presupone hecho en la máquina. Fuera «Marcar aplicada» y «Guardar» manual. Estadísticas solo de lo aceptado; traza con fecha y hora en el historial (REQ-027) |
+| Diseño (10-09, PRD v1.2) | Ventana, no panel. Cuatro bandejas con **Riesgo de rotura primero**. Decisión arriba en la ventana, detalle plegado con resumen (REQ-028) |
 
 ### Por qué tablas propias y no las del carrusel
 

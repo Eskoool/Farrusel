@@ -3,9 +3,12 @@
 ## 0. Metadatos
 
 ```
-Versión: 1.1
-Fecha: 2026-10-04
-Estado: v1.0 aprobada (OK de Yared, 2026-09-21); v1.1 = /cambio del 2026-10-04 (OK de Yared)
+Versión: 1.3
+Fecha: 2026-10-09
+Estado: v1.0 aprobada (OK de Yared, 2026-09-21); v1.1 = /cambio del 2026-10-04 (OK de Yared);
+v1.2 = /cambio del 2026-10-09 (OK de Yared): cobertura por artículo, un solo hueco por
+armario, aceptar = aplicada, rediseño de cabecera y ventana; v1.3 = /cambio del mismo día:
+pantalla única «Medicamentos» con Kardex + carrusel (§7.4c)
 Motor de build: Lovable (MVP). Las herramientas Python de tools/ son SOLO validación del
 modelo de datos, no producto. v2: migración a Claude Code + Vercel, mismo Supabase (§12)
 Autor: Yared González, con Claude (forja-prd)
@@ -103,7 +106,9 @@ siguiente corte si funcionó.
   origen, no de esta app.
 - **Proponer 0 a baja rotación.** Nunca. Se marca «Sin consumo» y se decide a mano.
 - **Tocar las tablas o vistas del carrusel** salvo el punto 11 (que no cambia datos, solo
-  cómo se leen).
+  cómo se leen). *(v1.3: el carrusel entra en el producto, pero por una **tabla propia** —
+  `inventario_almacen`, desde el Inventario por almacén de Athos — y **vistas nuevas**; sus
+  tablas y vistas siguen sin tocarse, §7.4c.)*
 - **Datos de pacientes.** No existen en Farrusel y no van a existir (§10).
 - **Reenvasados, caducidades del Kardex, pedidos a proveedor.** Otros módulos u otros
   proyectos.
@@ -350,6 +355,21 @@ create policy anon_sel on public.uso_evento       for select to anon, authentica
 `referencia_externa`; función `solicitar_accion_kardex` (security definer, la única que `anon` puede
 usar para escribir en la bandeja).
 
+**Ampliación v1.2 (2026-10-09)** — REQ-025 y REQ-026. Dos columnas nuevas en `propuesta_kardex`,
+nulables para no romper las filas ya escritas:
+
+```sql
+alter table public.propuesta_kardex
+  add column modo_hueco text not null default 'actuales'
+    check (modo_hueco in ('actuales','uno')),            -- REQ-026: huecos actuales o un solo hueco
+  add column capacidad_recomendada int
+    check (capacidad_recomendada is null or capacidad_recomendada >= 1);  -- solo con modo_hueco = 'uno'
+```
+
+`dias_cobertura_min`/`_max` ya existían: desde la v1.2 guardan los días **elegidos para ese
+artículo**, no los globales. Prueba obligatoria como `anon` (`set local role anon`), igual que
+en la v1.1: insertar una `aceptada` con `modo_hueco = 'uno'` y pasarla a `aplicada`.
+
 **Ciclo de vida y borrado.** `propuesta_kardex` es append-only por diseño (una decisión
 nueva sobre el mismo par es una fila nueva; la vigente es la última `aceptada`/`aplicada`).
 Nada se borra desde la app. `evento_kardex` se conserva 12 meses (NFR-006) y se purga a
@@ -458,6 +478,26 @@ no cambian: siguen calculándose por artículo×armario.
   Fijar la lista exacta al ejecutar la Fase 3]`.
   > Dado un CSV exportado, cuando se recalcula `floor(tasa × diasMax)` en Excel, entonces
   > coincide con `maximo_propuesto` salvo donde `maximo_topado_por_capacidad = true`.
+- **REQ-025 `[Must]`** (v1.2) En la ventana del artículo, el sistema DEBERÁ permitir cambiar
+  los días de cobertura mínima y máxima **de ese artículo** y recalcular la propuesta al
+  momento con la fórmula de REQ-004. Los días globales (7/21 por defecto, panel «Cambiar»)
+  siguen siendo el valor inicial y lo que usan la tabla y las bandejas. Validación en
+  cliente: enteros > 0 y mínimo < máximo, con mensaje en español.
+  > Dado un artículo con 0,82 uds/día, cuando se cambia la cobertura a 10/30, entonces la
+  > propuesta pasa a 8 / 24 (o al tope de capacidad en modo «huecos actuales»).
+  > Dado mínimo 21 y máximo 7, cuando se escribe, entonces mensaje y ningún botón de aceptar.
+- **REQ-026 `[Must]`** (v1.2) El sistema DEBERÁ ofrecer, **por armario**, dos modos de cálculo:
+  «Huecos actuales» (REQ-004 tal cual, con tope de capacidad) y **«Un solo hueco»**, donde el
+  máximo NO se limita por la capacidad actual y el sistema DEBERÁ indicar
+  **capacidad a configurar = máximo**, porque la capacidad es lo que cabe en el hueco. Es
+  independiente de la decisión entre armarios de REQ-006 (mismo mín/máx en K1 y K2, o
+  repartir): con «repartir», la capacidad de cada armario es igual a su máximo repartido.
+  El sistema no conoce las dimensiones del cajón: DEBERÁ avisar de que hay que comprobar que
+  el modelo de hueco admite esa capacidad.
+  > Dado un artículo con 0,82 uds/día y capacidad actual 12, cuando se elige «Un solo hueco»
+  > con 7/21, entonces mín 5 · máx 17 · capacidad a configurar 17, sin marca de tope.
+  > Dado un «Hueco insuficiente» en modo «huecos actuales», cuando se ve el aviso, entonces
+  > sugiere probar «Un solo hueco».
 
 **Casos límite:** 120 filas «Sin Kardex» apagadas por defecto; apuntes del dispensador
 (`bookkeeping`) ocultos por defecto; `valor_stock` nulo → «—», nunca «0 €»; 24 huecos con
@@ -482,12 +522,21 @@ hasta «aplicada en la máquina».
   > Dado una fila `rechazada`, cuando se pulsa «Aplicada», entonces el botón no existe;
   > y si se fuerza por API, la base devuelve «Transición ilegal».
 - **REQ-011 `[Must]`** CUANDO una propuesta pasa a `aplicada`, el sistema DEBERÁ escribir el
-  mín/máx en `parametrizacion_kardex` con `fuente = 'aplicada'`, y la edición manual DEBERÁ
-  validar `0 ≤ mín ≤ máx` en cliente antes del upsert.
-  > Dado una propuesta aceptada, cuando se marca aplicada, entonces la fila muestra ese
+  mín/máx en `parametrizacion_kardex` con `fuente = 'aplicada'`. *(v1.2: la edición manual con
+  «Guardar» se retira; todo cambio de mín/máx pasa por una decisión, ver REQ-027.)*
+  > Dado una propuesta aceptada, cuando pasa a aplicada, entonces la fila muestra ese
   > mín/máx como actual y «según aplicación del dd/mm».
-  > Dado mín 10 y máx 5 en el modal, cuando se guarda, entonces mensaje en español y no se
-  > llama a Supabase.
+- **REQ-027 `[Must]`** (v1.2) **Aceptar = aplicada.** CUANDO el usuario pulsa «Aceptar», el
+  sistema DEBERÁ hacer las dos transiciones legales seguidas (`propuesta → aceptada →
+  aplicada`), sin pasar por el trigger de otra forma, de modo que queden `decidida_en` y
+  `aplicada_en` como traza de día y hora. Se presupone que lo aceptado se lleva a la máquina.
+  El botón «Marcar aplicada» y la sección «Guardar» de parametrización desaparecen. Las
+  estadísticas de decisiones cuentan solo lo aceptado (`aplicada`). El historial de la
+  ventana DEBERÁ mostrar fecha y hora, estado, mín/máx, días de cobertura y modo de hueco.
+  > Dado un par sin decisión, cuando se pulsa Aceptar, entonces existe una fila `aplicada`
+  > con `decidida_en` y `aplicada_en`, y `parametrizacion_kardex` tiene `fuente = 'aplicada'`.
+  > Dado que la segunda transición falla, cuando se muestra el error, entonces la fila queda
+  > `aceptada`, el mensaje lo dice y ofrece reintentar la aplicación.
 
 **Casos límite:** aceptar «Hueco insuficiente» o «Capacidad sin configurar» no está
 permitido (no hay propuesta válida que aceptar: el botón no aparece, y el `CHECK`
@@ -541,6 +590,74 @@ por armario, cada una con `ambito = 'conjunto'`.
   `procesado_en`, `resultado`, `error`, `referencia_externa` (id de la incidencia). Un segundo flujo
   sincroniza `solicitante` a diario desde `profiles` de Frello.
 
+### 7.4c Medicamentos: Kardex + carrusel en una pantalla (v1.3) — REQ-029 a REQ-034
+
+**Qué hace.** Pantalla única **«Medicamentos»** (`/medicamentos`): una fila por medicamento,
+desplegable a sus almacenes (K1, K2, carrusel horizontal ACH, carrusel vertical ACVR, farmacia),
+con mín/máx propuestos y decididos para Kardex **y** carrusel, rotura **del hospital**, reclamar
+pedido y solicitar a gestión. Sustituye a «Gestión Kardex» cuando esté validada; las pantallas
+del carrusel no cambian. Plan por fases en `LOG.md` (2026-10-09).
+
+- **REQ-029 `[Must]`** Nuevo tipo de informe **«Inventario por almacén»** (Athos) en el registro
+  de `/kardex/subida`, escrito en la tabla propia `inventario_almacen` (`fecha_descarga, almacen,
+  codigo, descripcion, cantidad, minimo, maximo, tipo_udc, unidades_por_udc, posiciones`;
+  `unique(fecha_descarga, almacen, codigo, tipo_udc)`; histórico, no pisa). Puertas: la fecha
+  **se pide** (el fichero no la trae); cabecera en la fila 8; duplicados exactos fuera; un mismo
+  código con dos tipos de UDC son dos filas; máximo vacío = `null`; cuadre de filas.
+  > Dado `InventarioPorAlmacen.xlsx` del 09-10, cuando se sube, entonces 1.216 filas únicas
+  > (ACH 1.012, ACVR 199 + V02129 doble, EXT 5) y ninguna en `inventario`.
+- **REQ-030 `[Must]`** Vistas nuevas `v_medicamento_almacen` (código × almacén) y `v_medicamento`
+  (código), que leen `v_kardex_articulo_armario`, `inventario_almacen` y el último
+  `stock_farmatools`. **Ninguna tabla ni vista existente cambia** (NFR-004: siguen 22 + las nuevas,
+  las 16 del carrusel sin perder filas).
+- **REQ-031 `[Must]`** **Rotura del hospital** = el stock no cubre **7 días** de
+  `consumo_medio_mensual / 30` (`DIAS_ROTURA = 7`, constante distinta de los días de cobertura del
+  mín/máx). Stock que cuenta:
+  - medicamento **normal**: farmacia (exist1) + K1 + K2 (Farmatools) + carrusel **horizontal**
+    (Inventario por almacén, ACH);
+  - medicamento **de frío** (tiene fila ACVR o stock en el vertical): farmacia + carrusel
+    **vertical** (ACVR). Verificado el 09-10: ningún código con stock en el vertical lo tiene
+    en el horizontal ni en el Kardex.
+  
+  *(2026-10-10)* El **robot de la UFA** (exist2) se suma al stock del medicamento normal; si es
+  el **único** sitio con existencias, el medicamento va **aparte** (`solo_ufa`) y se compara su
+  stock del robot con el consumo medio. El Hospital del Sur no cuenta. El robot guarda ambiente y
+  frío, así que se suma también en los de frío. Un medicamento **dado de baja** (descripción que
+  empieza por «BAJA») **nunca es rotura**: se quiere que se gaste.
+  
+  Con rotura y sin pedido que la cubra → «Solicitar a gestión». Con pedido que la cubre →
+  «En camino». Si un almacén automatizado está bajo su mínimo pero el hospital cubre los 7 días
+  → **«Reponer desde farmacia»**, nunca rotura. Exige Farmatools e Inventario del **mismo día**;
+  si no, aviso y sin cálculo (como REQ-007).
+  > Dado un medicamento con K1 vacío y 2.000 uds en farmacia y un consumo de 300/mes, cuando
+  > se calcula, entonces «Reponer desde farmacia» y no aparece en la bandeja de rotura.
+- **REQ-032 `[Must]`** Motor de mín/máx **multialmacén** (K1, K2, ACH, ACVR), con la fórmula de
+  REQ-004 y los días por artículo de REQ-025. En el carrusel, **hueco = tipo de UDC**: capacidad
+  de un hueco = `unidades_por_udc`, huecos necesarios = `ceil(máx / unidades_por_udc)`; «un solo
+  hueco» limita el máximo a `unidades_por_udc` y, si no cabe, sugiere un tipo mayor con
+  `catalogo_cubeta`. En Kardex no cambia nada.
+- **REQ-033 `[Must]`** **Cuatro escenarios** en la ventana, sobre los almacenes donde está el
+  medicamento: huecos actuales · un hueco por almacén · **repartir** el máximo total por capacidad
+  · **duplicar** el mismo mín/máx en cada almacén. `propuesta_kardex.almacen` admite `ACH` y
+  `ACVR`; `modo_hueco` admite `actuales | uno | repartir | duplicar`. Una decisión del carrusel
+  **solo se registra**: el trigger escribe `parametrizacion_kardex` únicamente para K1/K2, y la app
+  nunca escribe en Athos; el siguiente Inventario por almacén confirma.
+- **REQ-034 `[Should]`** Bandejas de «Medicamentos», en orden: **Rotura del hospital** · Reponer ·
+  Pendiente de decidir · Errores de configuración; secundarias: Pedidos atrasados · Todos. Fila
+  con cajitas por almacén (K1, K2, CH, CV, Farm.) y cobertura del hospital en días. Toda lectura
+  con `fetchAllRows`.
+- **REQ-035 `[Must]`** **Subida única.** Todo informe entra por el registro de la subida del Kardex
+  (fecha pedida, puertas, cuadre, histórico, `carga`), que pasa a ser la única subida de Farrusel.
+  `/carrusel/operador` deja de subir: sus informes de Athos (Histórico, Caducidades, Tiempos,
+  Regularizaciones, Ubicaciones, Configuración, Bajo mínimos) se migran **uno a uno**, validando cada
+  uno con un fichero real, y escriben en sus mismas tablas para que las pantallas antiguas del
+  carrusel sigan funcionando; Farmatools se sube una sola vez. Al terminar, la subida vive en una
+  ruta neutra y las dos antiguas redirigen. Primer paso (2026-10-09): Inventario por almacén con
+  `tipo_reporte = 'INVENTARIO_ALMACEN'`, lector en `src/lib/informes/`, y aviso en el operador si
+  recibe ese informe. Ayuda: ATHOS Storage Report →
+  `https://dragostoragereport.intranet.net/reports/report/ATHOS%20Storage/Informes/InventarioPorAlmacen`
+  → Ver informe → descargar en Excel.
+
 ### 7.5 Identidad federada — REQ-019, REQ-020 · `[Retirado 2026-09-21]`
 
 Ambos requisitos se escribieron y se retiraron el mismo día: Yared aplazó la identidad
@@ -591,9 +708,15 @@ reciclan**; su contenido vive en el roadmap (§12, v1.2) y en el registro de cam
 | Pantalla | Con datos | Vacío | Cargando | Error |
 |---|---|---|---|---|
 | Subida | Zona de arrastre + historial de cargas (`carga`) | «Arrastra el primer informe. Tres formatos: …» con la ayuda de cada uno | Barra de parseo con recuento de filas | Semáforo rojo con el desajuste exacto y el botón deshabilitado |
-| Gestión Kardex | Métricas (huecos, llenado, valor del stock), selectores corte/periodo/almacén, chips (alerta · acción · Farmatools), tabla 5 col., «Ver más» 50 en 50 | «No hay ningún corte. Sube el informe de stock por hueco» + enlace a Subida | Esqueleto de tabla + «Cargando 1.538 filas» | «No se pudieron cargar todas las filas (tope alcanzado)» / error de red con reintentar |
-| Modal de detalle | Cabecera · Parametrización (actual editable, propuesto, **Aceptar / Rechazar / Aplicada**, historial de decisiones) · Huecos · Consumo · Económico · Farmatools · Cobertura · Alertas | Sección Farmatools: «Sin dato de Farmatools para este código» | Huecos: spinner al abrir | Guardado fallido: mensaje real de Postgres traducido |
+| Gestión Kardex | *(v1.2, REQ-028)* Cuatro bandejas con número grande, en este orden: **Riesgo de rotura** · Pendiente de decidir · Errores de configuración · Desajuste con Farmatools; «Sin hueco» y «Todos» como enlace secundario. Buscador y afinado en una línea. Ruta corta («N medicamentos · bandeja › filtro») en vez de la frase. Cuatro métricas (valor, stock, llenado, sin consumo) con barra de proporción filtrado/total; las otras cuatro tras «Más cifras»; color solo si el valor indica problema. Tabla, «Ver más» 50 en 50 | «No hay ningún corte. Sube el informe de stock por hueco» + enlace a Subida | Esqueleto de tabla + «Cargando 1.538 filas» | «No se pudieron cargar todas las filas (tope alcanzado)» / error de red con reintentar |
+| Modal de detalle | *(v1.2, REQ-028; sigue siendo ventana, no panel)* Cabecera con selector K1 + K2 / K1 / K2 · **Decisión arriba**: días de cobertura editables, modo «Huecos actuales / Un solo hueco», propuesta en una línea con su porqué, mínimo · máximo · capacidad, **Aceptar / Rechazar** · cuatro cifras (stock/capacidad, cobertura, consumo, pedido pendiente) · «Qué hay que mirar» con su botón al lado (Reclamar pedido, Solicitar a gestión) · plegados con resumen: Huecos · Consumo y cobertura · Reposición y pedidos · Precio y Farmatools · Historial (fecha y hora) | Sección Farmatools: «Sin dato de Farmatools para este código» | Huecos: spinner al abrir | Guardado fallido: mensaje real de Postgres traducido |
 | Actividad `[Could]` | Usos por pantalla y mes, eventos por estado, % éxito | «Todavía no hay actividad registrada» | Esqueleto | Error de red |
+
+**REQ-028 `[Should]`** (v1.2) La cabecera y la ventana DEBERÁN seguir la distribución de las
+dos filas de arriba, sin quitar ningún dato: lo que no está a la vista queda plegado o tras
+«Más cifras». Los párrafos explicativos pasan a ayuda emergente.
+> Dado un artículo en K1 y K2, cuando se abre la ventana, entonces la propuesta y sus botones
+> se ven sin desplazarse.
 
 **Sistema de diseño:** el «Frello» ya en uso (`HeroHeader`, `SectionCard`, `Metric`, tokens
 `accent` ocre para «cambió respecto al corte anterior», `warning` ámbar, `destructive` rojo,
@@ -811,3 +934,5 @@ Espera mi OK antes de tocar la primera pantalla.
 | 2026-09-21 | Python = validación, no producto; v2 = Claude Code + Vercel sobre el mismo Supabase; sin visto bueno de Sistemas | Aclaraciones de Yared en el checkpoint | §0, §4, §11, §12, §10 | aceptado en el checkpoint |
 | 2026-10-04 | **v1.1.** (A) `parametrizacion_kardex.fuente` admite `'aplicada'` (el CHECK original lo impedía y la Fase 0 fallaba); (B) cuarto informe «Ocupación de armario» recibido y cargado el 23-09: REQ-016 ✅ con sincronización, mín/máx 0 = `null`, `manual` manda sobre el informe y **el informe manda sobre `aplicada`**; Fase 6 hecha; (C) «Gestión Kardex» pasa a fila por medicamento con seis vistas y cobertura del peor armario; (D) Farmatools ampliado el 23-09 (pedidos, `consumed`, `consumed_ad00`) | El PRD describía un bloqueo ya resuelto y una pantalla ya rehecha; la Fase 0 no se podía ejecutar tal cual | §0, §3.10, §6, §7.2, REQ-016, §11 (Fases 0 y 6) | incorporado a la v1 (OK de Yared, 2026-10-04) |
 | 2026-10-04 | **v1.1 (2).** Reposición (REQ-021, construido), aviso de pedido ≥ 7 días (REQ-022), modal de solicitante y bandeja (REQ-023) y consumidor n8n → Frello (REQ-024). «Escribir en Frello» deja de estar fuera de alcance, pero solo a través de n8n. Se adelanta a las Fases 1 y 2 (decisión de Yared). Paneles informativos de Frello descartados como destino (0 filas, sin políticas) | Yared quiere reclamar pedidos y pedir a gestión desde el Kardex con sus flujos de n8n, sin tocar Frello | §3, §6, §7.4b | incorporado (OK de Yared, 2026-10-04) |
+| 2026-10-09 | **v1.3.** Pantalla única «Medicamentos» con Kardex + carrusel (§7.4c, REQ-029…035): Inventario por almacén de Athos como fuente del carrusel en tabla propia con histórico; rotura del hospital a 7 días (normal: farmacia + K1 + K2 + carrusel H; frío: farmacia + carrusel V); «Reponer» separado de la rotura; hueco del carrusel = tipo de UDC; cuatro escenarios (actuales, uno, repartir, duplicar); decisiones del carrusel solo registradas | La rotura de hoy no suma el carrusel (`cobertura_con_farmacia` = Kardex + farmacia) y el carrusel no tiene decisiones ni conexión con gestión; Yared quiere un solo sitio | §3, §7.4c, regla 7 de `CLAUDE.md` | incorporado (OK de Yared al plan, 2026-10-09) |
+| 2026-10-09 | **v1.2.** (A) Cobertura editable por artículo en la ventana (REQ-025); (B) modo «Un solo hueco» por armario, sin tope y con capacidad a configurar = máximo, independiente del reparto K1/K2 (REQ-026); (C) Aceptar = aplicada, se retiran «Marcar aplicada» y la edición manual con «Guardar» (REQ-027, cambia REQ-011); (D) rediseño de cabecera (cuatro bandejas, rotura primero) y de la ventana (decisión arriba, detalle plegado) (REQ-028); (E) `propuesta_kardex` + `modo_hueco`, `capacidad_recomendada` | Cabecera y ventana demasiado densas (~80 datos en 11 bloques); Yared quiere ajustar la cobertura y saber qué máximo y capacidad poner si deja un solo hueco; el paso «aplicada» separado no aporta | §0, §6, §7.2, §7.3, §8, regla 4 de `CLAUDE.md` | incorporado (OK de Yared, 2026-10-09) |
